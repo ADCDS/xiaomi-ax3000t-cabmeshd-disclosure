@@ -1,0 +1,44 @@
+Documentation license — CC BY 4.0
+
+The prose documentation in this repository is licensed under the Creative
+Commons Attribution 4.0 International License (CC BY 4.0).
+
+Covered files:
+
+  README.md
+  ADVISORY.md
+  chain1-admin-takeover.md
+  chain2-root-rce.md
+  technical-appendix.md
+  secondary-findings.md
+  remediation.md
+  mitigations.md
+  poc/README.md
+  evidence/hardware-validation.md
+  evidence/independent-validation.md
+  evidence/cross-model/README.md
+  evidence/cross-model/results.tsv
+
+You are free to share (copy and redistribute the material in any medium or
+format) and adapt (remix, transform, and build upon the material) for any
+purpose, even commercially, under the following terms:
+
+  Attribution — You must give appropriate credit, provide a link to the
+  license, and indicate if changes were made. You may do so in any reasonable
+  manner, but not in any way that suggests the licensor endorses you or your
+  use.
+
+  No additional restrictions — You may not apply legal terms or technological
+  measures that legally restrict others from doing anything the license
+  permits.
+
+Full legal code: https://creativecommons.org/licenses/by/4.0/legalcode
+Human-readable summary: https://creativecommons.org/licenses/by/4.0/
+
+Suggested attribution:
+
+  Adriel Santos, "Xiaomi AX3000T (RD03v2) cab_meshd pre-authentication admin
+  takeover and root RCE", 2026. https://github.com/ADCDS/xiaomi-ax3000t-cabmeshd-disclosure
+
+The source code is licensed under MIT — see LICENSE. Read NOTICE before using
+anything here.

