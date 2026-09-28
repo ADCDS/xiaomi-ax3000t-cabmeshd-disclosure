@@ -12,11 +12,16 @@ root command execution (V2)
 | **Credit** | Adriel Santos |
 | **PoC** | **Included** — the weaponised chain publishes with this advisory; see [`poc/`](poc/) and [Mitigations for owners](mitigations.md) |
 
+> **Scope clarification, 2026-09-28:** The root-shell hardware test used minimal
+> initialization that left `NETMODE` unset. Normal Xiaomi web setup can set
+> `whc_cap` and block the demonstrated CAP root path. V1 remains independent of
+> that gate. See [`CORRECTIONS.md`](CORRECTIONS.md).
+
 ## Affected
 - **Analysed product:** Xiaomi Router AX3000T, model `xiaomi.router.rd03v2`
   (`RD03v2`), firmware MiWiFi/XiaoQiang `2.0.28` — where V1 and V2 are confirmed on
   hardware.
-- **Shared root cause — 28 further model codes verified.** The hard-coded key of V1
+- **Shared key — 28 further model codes verified in firmware.** The hard-coded key of V1
   is byte-identical in stock firmware for **28 Xiaomi/Redmi router model codes**
   across **three CPU architectures** (ARM64, ARM32, MIPS32el), CN and international
   builds, and **three Wi-Fi generations**: `RD03 RD23 RD15 RD16 RD18 RD08 RC06 RC01
@@ -52,15 +57,14 @@ root command execution (V2)
 These two findings have different evidentiary reach, and we state them separately
 rather than asserting the stronger one everywhere.
 
-**V1 applies across all 28 confirmed model codes.** On each, three things were
-verified directly from shipped firmware: the key is present and is the only hex
-literal of 24+ characters in `cab_meshd`; the binary carries the same protocol and
-state machine (`ST_SSL_DONE`, `ST_RUNNING`, `cap_init`, `SSL_CTX` with no client
-verification, and the daemon's own `INF: id: %s, pass: %s , key: %s` debug string);
-and `/etc/init.d/cab_meshd` gates the listener identically — `INITTED=YES` →
-`cab_meshd -S -i br-lan`, with no feature flag on the CAP branch. The chain was
-executed on hardware on `RD03v2` / `2.0.28`; on the other 28 it rests on that
-identity of key, daemon and start condition.
+**V1's shared key appears in all 28 surveyed model codes.** The firmware sweep
+directly verifies that key in each `cab_meshd` binary, together with matching
+protocol/state strings. Listener scripts inspected on unrelated models
+(`RA71`, `RC01`) use the same `INITTED=YES` → `cab_meshd -S -i br-lan` CAP
+branch. The chain was executed through web-admin login on hardware on
+`RD03v2` / `2.0.28`; a public RB01 capture independently confirms the key and
+handshake. Complete listener behavior and login were not tested on every
+surveyed model.
 
 **V2 is confirmed end-to-end only on `RD03v2` / `2.0.28`.** Its two components are
 nonetheless present across generations — the `eval "$key=\"$(json_get_value …)\""`
@@ -72,12 +76,12 @@ were **not** verified outside `2.0.28`: whether those firmwares' admin API exemp
 quoting identically. We therefore claim **the sink and its input path are present
 across the line; the full chain is demonstrated on `RD03v2` `2.0.28` only.**
 
-The practical consequence is unchanged for remediation: V1 alone is complete
-administrative compromise of any affected unit, and V1 is the finding with line-wide
-reach.
+The practical consequence for the analysed device is unchanged: V1 alone gives
+administrative control. The shared key and listener code call for line-wide
+remediation, while complete V1 login on the other models remains inferred.
 - **Component:** `/usr/sbin/cab_meshd` and the mesh scripts
-- **Exposure:** TCP/UDP 19553 on `br-lan` (LAN + Wi-Fi) once the device is
-  initialised (`INITTED=YES`) — the normal state of any deployed router. The
+- **Exposure:** TCP/UDP 19553 on `br-lan` (LAN + Wi-Fi) when the device runs an
+  initialized CAP listener (`INITTED=YES`). The
   `/etc/init.d/cab_meshd` gate producing this exposure was read on unrelated models
   (`RA71`, `RC01`) and is identical.
 
@@ -115,12 +119,16 @@ command-injection payload into Wi-Fi `encryption` UCI keys (exempt from the web 
 sanitizer `hackCheck`); a `type-7` trigger then fires `cap_init`, whose
 `mimesh_init.sh:717` `eval` executes the raw `encryption` value as root. The direct
 injection variants (base64-laundered via the type-4 plant or RE builder) also reach
-the same sink.
+the same sink in emulation. The physical OTA test used `poc/init_router.py` to
+initialize stock while leaving `NETMODE` unset. The normal web wizard can set
+`NETMODE=whc_cap`; `do_cap_init` skips this sink in that mode. We have not
+demonstrated a non-reset transition from V1 admin to V2 root on such a unit.
 - **CWE-78** (OS command injection).
-- **CVSS 3.1:** `AV:A/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H` → **8.8 (High)**.
-  Network-adjacent, no privileges (the admin session is obtained pre-auth via V1),
-  full root control. The RE/WAN variant would rate `AV:N` if dynamically confirmed.
-- **Status: confirmed end-to-end on physical hardware** via the OTA combined chain
+- **CVSS 3.1 for the demonstrated gate-open state:**
+  `AV:A/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H` → **8.8 (High)**. This is not a claim
+  that the root path is reachable after ordinary web setup. The RE/WAN variant
+  would require a separate exposure assessment if dynamically confirmed.
+- **Status: confirmed end-to-end on physical hardware in the gate-open state** via the OTA combined chain
   (V1 admin takeover → plant `encryption` payloads → V2 `cap_init` trigger → root
   callback `uid=0_user=root_host=XiaoQiang` → interactive root shell via reverse
   shell). The device stays online through the exploit (self-repairing payload restores
@@ -139,16 +147,18 @@ the same sink.
   `apps.download="1"`. **CWE-78**, shared-code risk.
 
 ## Attack prerequisites (V1)
-Same-L2 reach (wired LAN or Wi-Fi, incl. a bridged guest network) to port 19553 on
-an initialised unit. No credentials, no user interaction, no prior foothold. The
+Same-L2 reach to port 19553 on an initialized CAP listener (wired LAN or main
+Wi-Fi; any other segment only if its firewall permits that port). No
+router-admin or mesh credentials, no user interaction during V1, and no prior
+foothold beyond network access. The
 authenticating key is public (extractable from any unit's firmware).
 
 ## Impact (V1)
 Complete administrative control of the router: DNS/WAN/firewall changes and traffic
 interception, Wi-Fi password recovery, and lateral movement to LAN devices. The
-hard-coded key is identical across **28 verified model codes**, so a single
-extraction — from any unit, of any model, of any Wi-Fi generation, on any
-architecture — is weaponisable line-wide.
+hard-coded key is identical across **28 surveyed model codes**, so one
+extraction exposes a shared authenticator line-wide. Complete web-admin login
+was verified on RD03v2 hardware, not separately on every surveyed model.
 
 The disclosure is also not recent: the type-6 sync message carrying `web_passwd256`
 has been retrievable by public, working, unauthenticated code since **March 2023**
@@ -156,7 +166,7 @@ has been retrievable by public, working, unauthenticated code since **March 2023
 
 ## Status of validation
 V1 validated end-to-end on physical hardware. V2 validated end-to-end on **physical
-hardware** via the OTA combined chain: V1 mints admin → plants `encryption` payloads
+hardware after minimal, gate-open initialization** via the OTA combined chain: V1 mints admin → plants `encryption` payloads
 → V2 trigger fires root `eval` → interactive root shell over Wi-Fi. Root callback
 (`uid=0_user=root_host=XiaoQiang`) captured repeatedly; interactive BusyBox ash shell
 with full device enumeration (`netstat -tlnp`, `uname -a`, model `RD03v2`). The

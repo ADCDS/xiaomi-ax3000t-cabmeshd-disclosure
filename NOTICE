@@ -18,21 +18,19 @@ else's equipment.
 
 2. What the exploit does
 ------------------------
-`poc/ota_rce.py` obtains an unauthenticated root shell on the target. It
-modifies the device's Wi-Fi encryption configuration and triggers `cap_init`
-in the mesh daemon in order to do so. It is not a read-only probe. The payload
-self-repairs the wireless configuration afterwards, but the device is left
-with modified state.
+`poc/ota_rce.py` can obtain a root shell on a gate-open RD03v2. It modifies
+the device's Wi-Fi encryption configuration and triggers `cap_init` in the
+mesh daemon. It is not a read-only probe. The payload self-repairs the
+wireless configuration afterwards, but the device is left with modified state.
 
-3. The trigger is ONE-SHOT
+3. The mode gate can close
 --------------------------
-The first successful `cap_init` persists `NETMODE=whc_cap`, which gates the
-command-injection sink until the device is factory reset. A device that has
-already been exploited is therefore indistinguishable from a device on which
-the exploit is broken: the configuration plant still succeeds, the trigger is
-still accepted, and nothing ever connects back. If you hit this, the fix is a
-factory reset to re-arm — see `mitigations.md`. `poc/ota_rce.py` checks for
-this state and refuses to fire rather than fail silently.
+The demonstrated CAP command-injection sink is skipped when
+`NETMODE=whc_cap`. A completed `cap_init` can set that mode, but normal Xiaomi
+web setup can set it too; it is not evidence that a prior exploit ran. Treat
+the trigger as potentially one-shot and do not fire it unless the setup state
+has been checked. `poc/ota_rce.py` refuses to plant or fire unless it confirms
+the gate-open mode used in the hardware test. See `CORRECTIONS.md`.
 
 4. The hard-coded key is a firmware fact, not a secret of the author's
 ----------------------------------------------------------------------

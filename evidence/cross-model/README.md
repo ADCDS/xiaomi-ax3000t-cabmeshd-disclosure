@@ -80,8 +80,9 @@ current models — `S99` symlink present, and `INITTED=YES` → `cab_meshd -S -i
 with **no feature flag on the CAP branch** (`meshSupportRE` gates only the RE branch).
 Its binary carries the same protocol strings and debug format string. The V2 sink and
 its input path are present too, at `mimesh_init.sh:593` and `mesh_connect.sh:920`.
-**V1 therefore applies; the full V2 chain is demonstrated only on `RD03v2` `2.0.28`
-— see the advisory for that distinction.**
+This supports a V1 candidate on `RD05`; complete web-admin login was not
+tested on that hardware. The full V2 chain was demonstrated only on `RD03v2`
+`2.0.28` in a gate-open state — see the advisory for that distinction.
 
 ### These devices may have no route to a patch
 
@@ -95,9 +96,11 @@ Xiaomi wishes to** — which is a further argument that the remediation has to b
 architectural (retire the shared key, require per-device secrets) rather than a
 firmware bump on each affected model.
 
-**`RD03v2` — the analysed device — also has no public firmware image.** No dump of
-the `2.0.x` branch exists anywhere; the evidence for that branch is the on-device
-analysis in [`../hardware-validation.md`](../hardware-validation.md).
+**`RD03v2` — the analysed device — has an official public 2.0.28 image.** Xiaomi's
+signed [`miwifi_rd03v2_firmware_31bf9_2.0.28.bin`](https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/rd03v2/miwifi_rd03v2_firmware_31bf9_2.0.28.bin)
+has SHA-256 `3138342e564c7d7482fde4a90e1778830180f0eac15e1de5f3ad269f9ba9940f`.
+The static recheck of that image complements the physical results in
+[`../hardware-validation.md`](../hardware-validation.md).
 
 ### OpenWrt is model-specific, not a line-wide escape
 
@@ -147,10 +150,12 @@ not the supported `R4A`.
 
 ## What this establishes
 
-1. **The key is firmware-global across the product line, not per-model.** 28 model
-   codes, 3 architectures, both CN and international builds, MediaTek and Qualcomm
-   and MIPS silicon, spanning Wi-Fi 5 through Wi-Fi 7. A single extraction from any
-   one unit is sufficient to authenticate to any other.
+1. **The key is firmware-global across the surveyed product line, not per-model.**
+   28 model codes, 3 architectures, both CN and international builds, MediaTek and
+   Qualcomm and MIPS silicon, spanning Wi-Fi 5 through Wi-Fi 7. A single
+   extraction gives the key embedded in the other surveyed images. Functional
+   handshake evidence exists for RD03v2 and the public RB01 capture; complete
+   login was not tested on every model.
 2. **It is present in current, actively-shipped firmware**, including
    `RC01` (Router BE10000) at `1.1.56` and `RD08` (BE6500 Pro) at `1.1.96` — Xiaomi's
    present-generation Wi-Fi 7 flagships. This is not a legacy branch.
@@ -159,11 +164,12 @@ not the supported `R4A`.
    four releases spanning July 2023 to August 2025. The same binary is shared
    outright between distinct products: `RD15`/`RD16`, `RD01`/`RD02`, `RB01`/`RB03`,
    `RA72`/`RA74`, `RA80`/`RA81`, `RA67`/`RM1800`, `RC06`/`RC01`, `RA69`/`R3600`.
-4. **The exposure condition is identical across models.** `/etc/init.d/cab_meshd`
+4. **Sampled models share the CAP exposure condition.** `/etc/init.d/cab_meshd`
    was read on models unrelated to the analysed device (`RA71`, `RC01`) and gates
    the listener the same way in each: `NETMODE` not `whc_re`/`wifiapmode`, and
-   `INITTED = YES` → `cab_meshd -S -i br-lan`. That is the default state of any
-   deployed router.
+   `INITTED = YES` → `cab_meshd -S -i br-lan` for an initialized CAP. This
+   does not prove every deployed router runs in that role or that the full
+   admin-login sequence succeeds on each model.
 5. **The key is the sole long hex literal** in every binary examined, and in each it
    is adjacent to the daemon's own debug format string
    `INF: id: %s, pass: %s , key: %s` — the log line that prints the peer's key and

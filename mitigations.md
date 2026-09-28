@@ -11,15 +11,16 @@ routers.
 
 ## 1. Are you affected?
 
-The vulnerability class is **firmware-global and line-wide**, not specific to one
-model. The hard-coded mesh key is byte-identical across **28 Xiaomi and Redmi router
+The shared mesh key is **firmware-global and line-wide**, not specific to one
+model. It is byte-identical across **28 Xiaomi and Redmi router
 model codes** spanning three CPU architectures and three Wi-Fi generations — from the
 sub-$25 Mi Router 4A Gigabit Edition to the current BE10000 flagship. Full table and
 hashes: [`evidence/cross-model/`](evidence/cross-model/).
 
 The analysed and hardware-confirmed target is the **Xiaomi Router AX3000T
-(`RD03v2`)** on MiWiFi/XiaoQiang **2.0.28**. Other models share the flaw; they have
-not each been confirmed on hardware, and the over-the-air OpenWrt installer in this
+(`RD03v2`)** on MiWiFi/XiaoQiang **2.0.28**. Other models share the key and
+similar listener code; complete admin login and root execution have not each
+been confirmed on hardware. The over-the-air OpenWrt installer in this
 package does **not** apply to them — see §4.
 
 You can check your model from the router's web UI or the Mi Home / Mi WiFi app.
@@ -28,13 +29,13 @@ You can check your model from the router's web UI or the Mi Home / Mi WiFi app.
 
 Be precise about the threat model, because it determines what helps:
 
-- The daemon listens on **TCP/UDP 19553 on the LAN bridge (`br-lan`)** — and only
-  when the device is initialised and running as a mesh CAP (`INITTED=YES`, which is
-  the normal state of a router in use).
+- The daemon listens on **TCP/UDP 19553 on the LAN bridge (`br-lan`)** when an
+  initialized CAP instance is running (`INITTED=YES`).
 - It is **not exposed to the WAN.** A remote attacker on the internet cannot reach it
   directly.
-- **The attacker must already be on your LAN or Wi-Fi.** That is the whole
-  prerequisite: no credentials, no user interaction, no physical access.
+- **The attacker must be able to reach the listener**, ordinarily from your
+  wired LAN or main Wi-Fi. V1 needs no router-admin or mesh credentials after
+  that network access is obtained.
 
 So the question that decides your risk is: **who else can join your network?**
 
@@ -47,13 +48,9 @@ Worth stating plainly, because these are the intuitive moves:
   it, and after exploitation the password is known to the attacker anyway.
 - **Disabling remote/web management, UPnP, or WAN access.** The flaw is not
   WAN-facing. Closing WAN features changes nothing here.
-- **Hiding the SSID, MAC filtering, or a longer Wi-Fi password.** These raise the
-  cost of *joining* the network. They do nothing once someone is on it — and the
-  attack needs no credentials at all.
-- **Guest-network isolation on the same router.** The mesh daemon listens on the LAN
-  bridge and is reachable from the guest Wi-Fi too. Putting devices on the guest
-  network does not contain this; **if you run guest Wi-Fi for other people, that is
-  an exposure path, and turning it off is a real mitigation.**
+- **Hiding the SSID or MAC filtering.** These do not protect a router from
+  clients that already have access to its main LAN or Wi-Fi. A strong Wi-Fi key
+  still matters because it limits who can join that network.
 - **Waiting for a firmware update.** None has been committed to. The vendor's
   published policy allows 180 days *after a fix plan is complete*, and part of the
   affected range appears to have no update channel at all.
@@ -62,13 +59,15 @@ Worth stating plainly, because these are the intuitive moves:
 
 **Treat the LAN as the security boundary it now is.**
 
-1. **Know who is on your network.** Every client that can reach the router's LAN can
-   become root on it. Remove unknown clients.
-2. **Turn off guest Wi-Fi** if you cannot guarantee the guests. This is the single
-   most effective containment step for a typical home deployment.
+1. **Know who is on your network.** A client that can reach the CAP listener can
+   obtain web-admin access. The demonstrated root path additionally requires a
+   gate-open mode; see [`CORRECTIONS.md`](CORRECTIONS.md). Remove unknown clients.
+2. **Keep guest isolation enabled and verify it.** Stock RD03v2 guest Wi-Fi uses
+   a separate bridge whose firewall rejects port 19553; a custom bridge or
+   firewall rule could change that. Do not put untrusted clients on the main LAN.
 3. **Use a strong WPA2/WPA3 key and do not share it.** This does not stop the
    exploit, but it is what keeps the attacker off the LAN in the first place.
-4. **Do not deploy this router where untrusted clients share its L2 segment** —
+4. **Do not deploy this router where untrusted clients share its main L2 segment** —
    shared housing, cafés, small business guest access, conference networks. If you
    need public Wi-Fi, serve it from a *different* device on a separate segment, not
    from this router.
@@ -91,6 +90,9 @@ entirely rather than merely containing it.
   initramfs pivot or U-Boot TFTP recovery with a signed stock image), and the installed
   system comes up with **Wi-Fi disabled**, so have an Ethernet cable for the final step
   unless you configure the radios from the RAM system before running `sysupgrade`.
+  On stock 2.0.28 configured through the normal Xiaomi wizard, `NETMODE=whc_cap`
+  can block this installer’s root step; the documented route then requires a
+  full factory reset (erasing settings) followed by minimal initialization.
 
 - **Every other affected model — check before you assume.** The installer above is
   **`RD03v2`-only** and will not work on any other model code. OpenWrt support across
@@ -116,14 +118,12 @@ Assume you cannot tell from the device. A successful exploit gives the attacker
 `root`; a competent one leaves nothing obvious behind. Absence of indicators is not
 evidence of absence.
 
-**Indicators worth checking:**
+**`NETMODE=whc_cap` is not a compromise indicator.** The router's
+`api/xqnetwork/get_netmode` API reports it as `4`, but normal setup can produce
+that value without an exploit. It only tells you that the demonstrated CAP
+root path is gated in the current state.
 
-- **The one-shot gate.** The first successful `cap_init` persists `NETMODE=whc_cap`.
-  On a **standalone** router that you never configured as a mesh CAP, that state means
-  the trigger has been fired. With an admin session you can read it from the device's
-  own API — `api/xqnetwork/get_netmode` — where **`4` means `whc_cap`**. This is the
-  closest thing to a reliable tell, and it is a side effect of the exploit's
-  one-shot property rather than a designed detection.
+**Other indicators worth checking:**
 - SSH or telnet unexpectedly enabled.
 - Admin password changed, or a logged-in session you do not recognise.
 - Port-forwarding or DMZ rules you did not create.

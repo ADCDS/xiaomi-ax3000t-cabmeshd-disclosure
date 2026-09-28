@@ -1,12 +1,15 @@
-# V2 — pre-authentication root command execution (RCE)
+# V2 — root command execution in a gate-open state (RCE)
 
-**Severity: Critical.** After the same forged, credential-free handshake as V1, an
-unauthenticated network peer reaches a shell `eval` that runs as **root**.
-**Confirmed end-to-end on physical hardware** via the OTA combined chain (V1 admin
+**CVSS 8.8 (High) for the demonstrated gate-open state.** After the same forged,
+credential-free handshake as V1, an adjacent peer can reach a shell `eval` that
+runs as **root** when `NETMODE` leaves the CAP sink open. **Confirmed end-to-end on
+physical hardware after minimal initialization** via the OTA combined chain (V1 admin
 takeover → encryption-field injection → V2 trigger → interactive root shell over
-Wi-Fi). The direct injection variants (CAP/LAN ~4-char one-shot, RE/WAN ~36-byte
+Wi-Fi). The direct injection variants (CAP/LAN ~4-char, RE/WAN ~36-byte
 ungated) are confirmed in emulation. Three paths to the same sink, with different
-payload budgets — see *Scope & severity*.
+payload budgets — see *Scope & severity*. Normal Xiaomi web setup can set
+`NETMODE=whc_cap`, which skips the demonstrated CAP sink; see
+[`CORRECTIONS.md`](CORRECTIONS.md).
 
 ## Root cause
 
@@ -154,27 +157,29 @@ Full evidence in `evidence/hardware-validation.md`. PoC: `poc/ota_rce.py`.
 ## Scope & severity — three variants
 
 **OTA combined chain** (V1 → admin API → V2 trigger, over Wi-Fi):
-- **Confirmed end-to-end on physical hardware** (above).
+- **Confirmed end-to-end on physical hardware** after minimal initialization
+  left `NETMODE` unset (above).
 - **Unlimited payload budget** — no length cap on the `encryption` UCI value.
 - Requires the V1 admin takeover first (automated, pre-auth, same Wi-Fi adjacency).
-- One-shot (the `cap_init` trigger self-gates with `NETMODE=whc_cap`), but the full
-  payload runs before the gate closes — a single execution delivers a complete
-  reverse shell + persistence.
+- A completed `cap_init` can close the gate with `NETMODE=whc_cap`; treat the
+  trigger as one-shot when preparing the payload. The demonstrated root
+  callback ran before any such closure.
 
 **CAP / LAN path** (`cab_meshd -S -i br-lan`, started when `INITTED=YES` — an
-initialised/operating router; the same surface V1 uses):
+initialized router with a gate-open mode; the same listener V1 uses):
 - **Confirmed in emulation** (root-owned file via daemon-driven trigger).
 - **~4-character one-shot.** The plant is 19 bytes; after the pad, ~8 base64 chars
   → ~6 raw bytes incl. backticks → a ~4-char command (`id`, `>W`, …). The larger
   `%s` args (`$6/$7` in the daemon template) are `base64(CAP's own SSID/pswd)`, not
-  attacker-controlled, so they cannot carry the payload. And the first `cap_init`
-  self-sets `NETMODE=whc_cap` (persisted across reboot), gating the sink until a
-  factory reset. A tightly-budgeted but real root primitive.
+  attacker-controlled, so they cannot carry the payload. A completed `cap_init`
+  can set `NETMODE=whc_cap`, gating the sink. Normal web setup can set it too.
+  This is a tightly-budgeted root primitive in the gate-open state.
 
-**RE / WAN path** (`cab_meshd -C -i <wan>`, started on a *fresh/unconfigured*
-device — `INITTED!=YES`, `proto=dhcp`): **ungated, repeatable, ~36-byte remote root
-RCE; every link proven live in emulation, the full single-run chain blocked only by
-an emulator-only WAN-gateway check.**
+**RE / WAN path** (`cab_meshd -C -i <wan>`, conditional on `INITTED!=YES`,
+`proto=dhcp`, and a nonempty WAN interface name): an **ungated, repeatable,
+~36-byte candidate root path in emulation**. The shipped WAN interface name is
+empty; whether boot-time port assignment starts the RE client on a fresh unit
+has not been measured on hardware.
 - **Ungated & repeatable.** `do_re_init` (`mesh_connect.sh:203-261`) has **no
   `NETMODE` guard** and calls `mimesh_init` unconditionally (`:257`); the `INITTED`
   gate `check_re_initted` (`:11`) is **dead code — never called**. Unlike the CAP
@@ -200,24 +205,26 @@ an emulator-only WAN-gateway check.**
 - **Outstanding.** The full one-run chain (rogue CAP → TLS → type-6 → root file) was
   not stitched under emulation: after *"Found CAP"* the RE gates its outbound TCP
   connect on a **WAN-gateway environment check** (`/tmp/cab_meshd_gw_ip`, WAN link)
-  that a bare veth netns cannot satisfy — an **emulation limitation, not a gate on
-  the vulnerability** (a real fresh unit has a WAN gateway). Every link is
-  individually proven; the single-run stitch and the RE-side auth key for the
-  reversed handshake remain.
+  that a bare veth netns cannot satisfy. This could be an emulation limitation,
+  but the shipped WAN interface name is also empty. Fresh-device startup, the
+  single-run stitch, and the RE-side auth key for the reversed handshake remain
+  unverified.
 
 ## Honest status
 
-**The OTA combined chain (V1 → V2) is confirmed end-to-end on physical hardware.**
+**The OTA combined chain (V1 → V2) is confirmed end-to-end on physical hardware
+in the minimally initialized, gate-open state.**
 The full sequence — pre-auth admin takeover, encryption-field injection,
 `cap_init` trigger, root callback (`uid=0`), interactive root shell — was reproduced
 multiple times on a physical RD03v2 running `romversion 2.0.28`. The device stayed
 online throughout (self-repairing payload). This is the definitive proof that V2 is
-a real, exploitable root RCE on stock hardware.
+a real root RCE on stock hardware in that state. It does not establish the same
+reachability after normal web setup sets `NETMODE=whc_cap`.
 
 The direct injection variants remain at their prior evidence levels: the **CAP/LAN
 path** is confirmed in emulation (daemon-driven root-owned file); the **RE/WAN path**
 has each link independently confirmed in emulation but the full single-run chain was
-not stitched (blocked by an emulator-only WAN-gateway check, not a gate on the bug).
+not stitched (the WAN-gateway check and fresh-device startup need live validation).
 Both were independently re-verified by a separate reviewer, which also corrected the
 earlier "uncapped" wording to the measured ~36/~66-byte budget.
 

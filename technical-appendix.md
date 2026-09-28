@@ -122,6 +122,7 @@ the laundering channel the V2 sink abuses.
 4. **`base64`-launderable C blacklist** feeding a shell consumer that
    **re-splits + `base64 -d` → `eval`** (§6) → **V2**, confirmed remote root RCE. The
    `type-7` handler has no `NETMODE`/state gate in the C code; the shell gate
-   (`NETMODE=whc_cap`, self-set by the first `cap_init`) only bounds the CAP/LAN path
-   to a one-shot. See `chain2-root-rce.md` for reachability, scope, and the RE/WAN
+   (`NETMODE=whc_cap`, set by normal CAP initialization or a completed `cap_init`)
+   can block the CAP/LAN path before the sink. See `chain2-root-rce.md` and
+   `CORRECTIONS.md` for reachability, scope, and the RE/WAN
    variant.

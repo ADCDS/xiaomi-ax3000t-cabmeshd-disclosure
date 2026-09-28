@@ -42,8 +42,8 @@ The forged-auth derivation was cross-checked against the daemon's own debug log,
 which prints the incoming peer's key (`q38d364d…`) and expected `pass`; the Python
 `base64(HMAC_SHA256("q38d364d…", id))` reproduces it exactly.
 
-**V1 is reproducible on demand and does not depend on any device state beyond
-`INITTED=YES`.**
+**V1 is reproducible on demand when the initialized CAP listener is reachable.**
+It does not depend on the CAP root sink's `NETMODE` gate.
 
 ## V2 OTA — root RCE via Wi-Fi: CONFIRMED end-to-end on physical hardware
 
@@ -53,7 +53,10 @@ RD03v2 unit. The full sequence runs purely over Wi-Fi with no WAN cable.
 ### Procedure
 
 1. Factory-reset the device; run `poc/init_router.py --host 192.168.31.1 --reboot` to
-   bring it to `INITTED=YES` (opens TCP 19553).
+   bring it to `INITTED=YES` (opens TCP 19553). This uses the minimal
+   `/api/xqsystem/router_init` path, **not** the normal Xiaomi web wizard.
+   `NETMODE` remained unset before the V2 trigger. Normal web setup can call
+   `init_cap 2` and set `whc_cap`, which skips the demonstrated CAP sink.
 2. Start `poc/ota_rce.py --host 192.168.31.1 --attacker 192.168.31.231` (the PoC
    automates all remaining steps, but manually:)
    - V1 (`extract_admin.py`) leaks `web_passwd256`, mints admin `stok`.
@@ -114,14 +117,16 @@ tcp        0      0 :::443                  :::*                    LISTEN      
 
 ### What this proves
 
-- **Arbitrary code execution as root** on physical hardware, over Wi-Fi, with no
-  credentials and no user interaction.
+- **Arbitrary code execution as root** on physical hardware in the documented
+  gate-open setup state, over Wi-Fi, without admin or mesh credentials.
 - **The `eval` sink is live and reachable** through the `mgmt_2g`/`mgmt_5g` →
   `encryption` UCI path on real stock firmware.
 - **The self-repair works**: the device stays online, the attacker maintains
   connectivity, and the reverse shell persists.
 - **The full chain is automated**: V1 admin takeover → V2 root RCE → interactive
   shell, all from a single script (`poc/ota_rce.py`).
+
+This does not establish V2 reachability after ordinary Xiaomi web setup.
 
 ---
 
