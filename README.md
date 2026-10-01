@@ -3,9 +3,10 @@
 An adjacent client that can reach an initialized CAP's `cab_meshd` can obtain
 **web-admin access without the admin password** (V1). V2 is a separate root command
 injection in Xiaomi's mesh initialization scripts. On RD03v2 stock 2.0.28 it was
-confirmed on hardware through two exploit routes: a direct V2 RE/WAN attack against
-a factory-reset router, and a combined V1 → V2 CAP/UCI attack against a deliberately
-prepared, gate-open CAP. The direct V2 CAP/LAN primitive was confirmed in emulation.
+confirmed on hardware through three exploit routes: direct V2 RE/WAN against a
+factory-reset router, combined V1 → V2 CAP/UCI against a deliberately prepared
+gate-open CAP, and the direct V2 CAP/LAN short-command primitive in that same CAP
+laboratory state.
 Normal Xiaomi setup can set `NETMODE=whc_cap`, which blocks the demonstrated CAP
 sink; reachability from that ordinary configured state has not been shown.
 
@@ -14,8 +15,8 @@ sink; reachability from that ordinary configured state has not been shown.
 > This is the public release of a coordinated-disclosure package, first reported to
 > Xiaomi on **2026-08-14** on a stated 45-day timeline. Nothing is patched.
 >
-> **It ships working proof-of-concept code for both hardware-confirmed root
-> routes** — the direct factory RE/WAN exploit and the combined, gate-open
+> **It ships working proof-of-concept code for all three hardware-confirmed root
+> routes** — direct factory RE/WAN, direct gate-open CAP/LAN, and the combined
 > V1 → V2 CAP/UCI exploit —
 > because for the analysed model, the **Xiaomi AX3000T
 > (`RD03v2`)**, escaping to OpenWrt is the only path off the vulnerable firmware, and
@@ -115,7 +116,7 @@ and V2.
 |---|---|---|---|
 | **Direct V2 RE/WAN** (`re_wan_rce.py`) | V2 only; no V1, admin session, or `init_router.py` | Factory-reset router; attacker on the selected WAN-side L2 segment | Hardware: direct `uid=0(root)` callback |
 | **Combined V1 → V2 CAP/UCI** (`ota_rce.py`) | V1 obtains admin for the API/UCI plant; V2 executes the stored values | Deliberately prepared, gate-open CAP; attacker on main LAN / Wi-Fi | Hardware: root callback and interactive shell |
-| **Direct V2 CAP/LAN** (`rce_poc.py`) | V2-only research primitive | Initialized, gate-open CAP; attacker on main LAN / Wi-Fi | Emulation: about four command characters |
+| **Direct V2 CAP/LAN** (`rce_poc.py`) | V2-only short-command primitive | Initialized, gate-open CAP; attacker on main LAN / Wi-Fi | Hardware: `id` evaluated as `uid=0(root)`; about four command characters |
 
 V1 never reaches the root `eval`: it ends after the type-6 verifier leak. Only the
 combined route uses V1, and there it supplies the admin session for a later UCI
@@ -155,13 +156,14 @@ The physical test produced a root callback and interactive shell. `cap_init`
 briefly drops Wi-Fi; the payload repairs the AP as WPA2 with the PoC's fixed key
 and starts a process-lifetime reconnecting shell. It installs no boot persistence.
 
-### Direct V2 CAP/LAN research primitive
+### Direct V2 CAP/LAN short-command primitive
 
 An initialized CAP in the same gate-open laboratory state also accepts a direct
 type-4 plant without V1 or an admin API call. The 19-byte field leaves room for
 roughly four command characters after positional padding and base64, so this route
-is documented as a constrained primitive. It executed through the stock daemon
-and scripts in emulation; the direct payload was not run on hardware.
+is documented as a constrained primitive. On physical hardware, an `` `id` ``
+payload reached the stock root `eval`; the diagnostic archive recorded
+`uid=0(root) gid=0(root)` in `bh_ssid` and the resulting wireless configuration.
 
 **CWE-78.** Full writeup: [`v2-root-rce.md`](v2-root-rce.md).
 
@@ -210,7 +212,7 @@ poc/
   extract_admin.py           PRIMARY PoC — leak verifier -> mint admin session
   ota_rce.py                 combined V1 -> V2 CAP/UCI route, confirmed on hardware
   re_wan_rce.py              direct V2 RE/WAN exploit, confirmed on hardware
-  rce_poc.py                 direct V2 CAP/LAN research primitive, emulation
+  rce_poc.py                 direct V2 CAP/LAN short-command primitive, hardware confirmed
 ```
 
 ## Disclosure

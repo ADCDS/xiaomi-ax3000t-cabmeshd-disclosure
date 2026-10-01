@@ -1,9 +1,11 @@
 # Hardware validation
 
-All results are from a physical Xiaomi AX3000T (RD03v2), `romversion 2.0.28`,
-purchased by the reporter for this research. No production or third-party systems
-were involved. Target LAN IP `192.168.31.1`; attacker host `192.168.31.231` on the
-router's Wi-Fi.
+All hardware results are from a physical Xiaomi AX3000T (RD03v2),
+`romversion 2.0.28`, purchased by the reporter for this research. The direct
+CAP/LAN section also retains its earlier emulation corroboration. No production or
+third-party systems were involved. Target LAN IP `192.168.31.1`; attacker host
+`192.168.31.231` used Wi-Fi for the combined route and Ethernet for the direct
+CAP/LAN route.
 
 ## Environment
 
@@ -223,19 +225,44 @@ PoC: `poc/re_wan_rce.py`.
 
 ---
 
-## Direct V2 CAP/LAN research primitive: CONFIRMED in emulation (daemon-driven)
+## Direct V2 CAP/LAN: CONFIRMED end-to-end on physical hardware
 
-Under the qemu-user harness running the **real stock `cab_meshd` binary and shell
-scripts**, with a clean on-disk config (`NETMODE` unset), a client that completed the
-tested `4→5→7` exchange and placed `base64("`>W`")` in the type-4 **plant** (`body[0x90]`)
-drove `mimesh_init.sh:717`'s `eval` to execute the redirect **as root**, creating
-`/W` (`root:root`). An `` `id` `` payload put `uid=0(root)…` in `bh_ssid`. This is
-arbitrary root command execution from an unauthenticated TCP client, through the full
-daemon path. Reproduced independently.
+Test date: 2026-10-01. The RD03v2 began at pristine stock 2.0.28 factory state
+(`inited=0`). `poc/init_router.py --reboot` created the documented CAP laboratory
+state; before the trigger, the API reported `get_netmode=0` and TCP/19553 was open.
 
-Instrumentation logged `NETMODE=[]` (gate open) at the guard (`do_cap_init:1043`) on
-the first trigger, and the on-disk config showed `NETMODE=whc_cap` afterward — i.e.
-the first `cap_init` fires the eval, then self-gates (one-shot).
+An observer admin session was minted with V1 solely to query `get_netmode` and
+download the post-test diagnostic archive. It sent no type-7, planted no UCI value,
+and was not used by the exploit route. The direct trigger itself was:
+
+```text
+python3 poc/rce_poc.py --host 192.168.31.1 --cmd id --hold 12
+plant@0x90 = 'a a a a a YGlkYA=='
+```
+
+The real stock daemon accepted the type-4 plant, completed the tested `4→5→7`
+exchange, and invoked `cap_init`. The stock diagnostic archive then contained:
+
+```text
+mimesh.log: keys:<CAP>,...,<uid=0(root) gid=0(root)>,...
+wireless:   option ssid 'uid=0(root)'
+```
+
+The value can only arise from command substitution of `` `id` `` inside
+`mimesh_init.sh:717`'s root `eval`. This confirms the direct CAP/LAN route on
+physical hardware without a V1 payload plant or admin API call.
+
+After the trigger, `get_netmode` changed from `0` to `4` (`whc_cap`) while
+`inited=1` and TCP/19553 remained reachable. The first `cap_init` therefore
+executed the sink and then closed its own shell gate, matching the emulation result.
+
+### Emulation corroboration
+
+The earlier qemu-user harness ran the same stock `cab_meshd` binary and shell
+scripts with UCI `NETMODE` unset. A ``base64("`>W`")`` type-4 plant created
+root-owned `/W`, and instrumentation showed the transition from `NETMODE=[]` to
+`NETMODE=whc_cap`. The physical `id` proof now supersedes emulation as the highest
+evidence level while retaining that independent corroboration.
 
 ### CAP/LAN delivery constraints
 
@@ -245,12 +272,11 @@ base64 bytes remain. For example, `` `reboot` `` needs twelve base64 bytes and
 cannot be evidence of this sink. A brief link interruption can instead come from
 `cap_delete_vap`, which runs before the shell gate.
 
-### CAP/LAN hardware evidence boundary
+### State restoration
 
-The direct V2 CAP/LAN payload was not executed on the physical unit while it was in
-the `NETMODE=whc_cap` state, which skips the sink. Its evidence level is therefore
-daemon-driven emulation. The separate direct RE/WAN and combined V1 → V2 CAP/UCI routes
-have the physical-hardware evidence documented above.
+After evidence capture, the router was factory-reset. The unauthenticated status
+endpoint again reported RD03v2 stock `2.0.28`, `inited=0`; TCP/19553 and SSH were
+closed. The host's temporary `192.168.31.231/24` test address was removed.
 
 ## V3 — root credential
 
@@ -274,3 +300,6 @@ against the device beyond the automatically-obtained admin session; the
 `set_telnet` call errored (endpoint absent) and changed nothing.
 The RE/WAN test changes configuration when `re_init` completes; the unit was
 factory-reset after the root callback and verified at `inited=0`.
+The direct CAP/LAN test changed `NETMODE` and wireless mesh state through
+`cap_init`; after log capture, the unit was factory-reset and verified at
+`inited=0` with TCP/19553 and SSH closed.

@@ -119,7 +119,7 @@ vulnerability has two V2-only exploit routes and one combined V1 → V2 route:
 |---|---|---|---|
 | **Direct V2 RE/WAN** | Factory-reset router; attacker on the selected WAN-side L2 segment; no V1, admin session, or initialization helper | Raw type-6 backhaul fields delivered by a rogue CAP | Hardware: direct `uid=0(root)` callback |
 | **Combined V1 → V2 CAP/UCI** | Deliberately prepared CAP with `NETMODE` unset; V1 mints admin, the API plants UCI values, then V2 triggers `cap_init` | Wi-Fi `encryption` values that avoid `hackCheck`'s blocked bytes | Hardware: root callback and interactive shell |
-| **Direct V2 CAP/LAN** | Reachable initialized CAP in the same gate-open state; no V1 or admin API call | Base64 token in the type-4 plant | Emulation: approximately four command characters |
+| **Direct V2 CAP/LAN** | Reachable initialized CAP in the same gate-open state; payload and trigger use no V1 or admin API call | Base64 token in the type-4 plant | Hardware: `id` evaluated as `uid=0(root)`; approximately four command characters |
 
 The combined CAP/UCI hardware test used `poc/init_router.py` as laboratory
 preparation. This was not an attacker capability demonstrated against a normally
@@ -163,7 +163,7 @@ the UCI plant. Reachability after ordinary Xiaomi setup was not demonstrated.
 
 Main-LAN or main-Wi-Fi access to an initialized CAP in the same gate-open state.
 This route needs neither V1 nor an admin API plant, but its approximately
-four-character command primitive was validated in emulation rather than hardware.
+four-character command primitive limits the available proof payload.
 
 ## Impact
 
@@ -183,15 +183,18 @@ has been retrievable by public, working, unauthenticated code since **March 2023
 
 Execution as uid 0 gives complete control of the operating system and router
 configuration. The combined CAP/UCI route can interrupt and rewrite Wi-Fi state;
-the direct RE/WAN route completes mesh initialization and changes network state.
+the direct CAP/LAN route also runs `cap_init` and changes mesh/Wi-Fi state; the
+direct RE/WAN route completes mesh initialization and changes network state.
 Complete V2 execution is established for RD03v2 `2.0.28`, not for every model that
 contains the shared HMAC key.
 
 ## Status of validation
-V1 was validated end-to-end on physical hardware. For V2, the **direct RE/WAN**
-and **combined V1 → V2 CAP/UCI** routes were validated end-to-end on physical
-hardware; the **direct V2 CAP/LAN** primitive remains confirmed in emulation. The
-route-specific output and setup boundaries are in
+V1 was validated end-to-end on physical hardware. All three V2 exploit routes were
+validated through the real daemon and shell scripts on physical RD03v2 hardware:
+**direct RE/WAN**, **direct CAP/LAN**, and **combined V1 → V2 CAP/UCI**. The direct
+CAP/LAN proof used an observer admin session only to query `get_netmode` and
+retrieve diagnostic logs; the payload and trigger used no V1 plant or admin API
+call. Route-specific output and setup boundaries are in
 [`evidence/hardware-validation.md`](evidence/hardware-validation.md).
 
 Two further lines of evidence, both reproducible by the vendor without hardware:

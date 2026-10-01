@@ -12,11 +12,11 @@ V1 remains the separate admin-verifier disclosure documented in
 |---|---|---|---|---|---|
 | **Direct V2 RE/WAN** (`re_wan_rce.py`) | V2 only; no V1, admin session, or `init_router.py` | Factory state (`INITTED!=YES`); selected WAN has DHCP/gateway state; rogue CAP wins discovery | WAN-side L2 | Raw type-6 `bh_ssid` / `bh_pswd` | Hardware: direct `uid=0(root)` callback |
 | **Combined V1 → V2 CAP/UCI** (`ota_rce.py`) | V1 supplies the admin session used for the UCI plant; V2 supplies root execution | Deliberately prepared CAP: `INITTED=YES`, `get_netmode=0`, UCI `NETMODE` unset | Main LAN / Wi-Fi | Wi-Fi `encryption` UCI values | Hardware: root callback and interactive shell |
-| **Direct V2 CAP/LAN** (`rce_poc.py`) | V2 only; constrained research primitive | Reachable initialized CAP in the same tested gate-open state | Main LAN / Wi-Fi | Type-4 `body[0x90]` plant | Emulation: root-owned file; about four command characters |
+| **Direct V2 CAP/LAN** (`rce_poc.py`) | V2 only; constrained short-command primitive | Reachable initialized CAP in the same tested gate-open state | Main LAN / Wi-Fi | Type-4 `body[0x90]` plant | Hardware: `id` evaluated as `uid=0(root)`; about four command characters |
 
-**CVSS 3.1: 8.8 High — `AV:A/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H`** for
-the two hardware-confirmed adjacent attack sequences. Their prerequisites are
-different and must not be merged.
+**CVSS 3.1: 8.8 High — `AV:A/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H`**. All
+three routes are hardware-confirmed, across two distinct adjacent device states.
+Their prerequisites must not be merged.
 
 The combined route uses two separate `cab_meshd` connections. V1 stops after
 reading the CAP's type-6 sync and mints an admin `stok`; after the API plant, V2
@@ -138,7 +138,7 @@ MAC, and stops `cab_meshd`. The exposure is therefore one-shot after a successfu
 run and returns only after another factory reset. Failed or interrupted attempts can
 reconnect while the router remains uninitialized.
 
-### Direct V2 CAP/LAN — type-4 research primitive
+### Direct V2 CAP/LAN — type-4 short-command primitive
 
 This path reaches the CAP sink without V1 or an admin API plant, but its payload is
 very small.
@@ -151,9 +151,8 @@ very small.
   `NETMODE=lanapmode` together with `CAP_MODE=ap`.
 - The attacker is on the main LAN or Wi-Fi.
 
-The state produced by `init_router.py` satisfies these conditions in the lab, but
-the direct payload was not executed on physical hardware. Its evidence level is
-daemon-driven emulation.
+The state produced by `init_router.py` satisfies these conditions in the lab. The
+direct payload was executed on physical hardware in that state.
 
 #### Delivery
 
@@ -183,12 +182,26 @@ shell bytes.
 The plant has only eight base64 bytes left after the pad: about six decoded bytes,
 including the surrounding backticks, or roughly four command characters.
 
-#### Emulation proof
+#### Hardware proof
+
+On physical RD03v2 stock 2.0.28, `rce_poc.py --cmd id` sent:
+
+```text
+type-4 body[0x90] = "a a a a a YGlkYA=="
+```
+
+The post-trigger diagnostic archive recorded `bh_ssid` as
+`uid=0(root) gid=0(root)` in `mimesh.log` and wrote `ssid 'uid=0(root)'` to the
+wireless config. An observer admin session was used only to query `get_netmode`
+and download that archive; the payload and trigger used no V1 plant or admin API
+call. `get_netmode` changed from `0` to `4` after execution, confirming that the
+first `cap_init` fired and then closed its own shell gate.
+
+#### Emulation corroboration
 
 With `NETMODE` unset, the stock daemon and scripts processed ``base64("`>W`")`` and
 created root-owned `/W`. An `` `id` `` payload reached the same root sink. A
-completed `cap_init` can then set `NETMODE=whc_cap`, making this path effectively
-one-shot.
+completed `cap_init` set `NETMODE=whc_cap`, matching the physical one-shot result.
 
 PoC: `poc/rce_poc.py`.
 
@@ -277,8 +290,9 @@ Detailed output is in `evidence/hardware-validation.md`.
   discovery, reversed HMAC/TLS, type-6 delivery, and a `uid=0(root)` callback.
 - **Combined V1 → V2 CAP/UCI:** physical hardware, root callback and interactive
   shell, after explicit `init_router.py` laboratory preparation.
-- **Direct V2 CAP/LAN:** stock daemon and scripts in emulation; the direct payload was
-  not executed on hardware.
+- **Direct V2 CAP/LAN:** physical hardware in the explicit gate-open CAP laboratory
+  state; `id` was evaluated as `uid=0(root)`. Emulation independently created a
+  root-owned marker through the same daemon path.
 
 The combined CAP/UCI result does not establish reachability after Xiaomi's normal
 wizard sets `whc_cap`. The RE/WAN result applies only to the separate factory/WAN

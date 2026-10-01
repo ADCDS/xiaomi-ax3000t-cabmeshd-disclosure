@@ -2,9 +2,10 @@
 """V2 — cab_meshd pre-auth root command execution (CAP/LAN path).
 
 Runs a shell command as root on a Xiaomi AX3000T (RD03v2, stock 2.0.28) CAP over
-TCP 19553 with no credentials. Confirmed end-to-end in emulation on the stock
-binary + shell scripts: the tested daemon-driven 4->5->7 exchange below drove the
-mimesh_init eval and created a root-owned file.
+TCP 19553 with no credentials. Confirmed end-to-end on physical hardware: an
+``id`` payload was recorded by the stock mesh log as ``uid=0(root)``. The same
+daemon-driven 4->5->7 exchange independently created a root-owned file in the
+stock-binary emulation harness.
 
 Delivery: the base64'd command must go in the TYPE-4 PLANT field,
 body[0x90] -> conn+0x10e, not in the MAC header field.
