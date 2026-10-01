@@ -1,12 +1,13 @@
 # Xiaomi AX3000T (RD03v2) — `cab_meshd` admin takeover and pre-auth root RCE
 
-An adjacent client that can reach an initialized CAP's `cab_meshd` can obtain
-**web-admin access without the admin password** (V1). V2 is a separate root command
-injection in Xiaomi's mesh initialization scripts. On RD03v2 stock 2.0.28 it was
-confirmed on hardware through three exploit routes: direct V2 RE/WAN against a
-factory-reset router, combined V1 → V2 CAP/UCI against a deliberately prepared
-gate-open CAP, and the direct V2 CAP/LAN short-command primitive in that same CAP
-laboratory state.
+An adjacent client that can reach Xiaomi's mesh commissioning daemon, `cab_meshd`,
+on an initialized CAP (Central Access Point: the root/controller mesh node) can
+obtain **web-admin access without the admin password** (V1). V2 is a separate root
+command injection in Xiaomi's mesh initialization scripts. On RD03v2 stock 2.0.28
+it was confirmed on hardware through three exploit routes: direct V2 RE/WAN
+(Range Extender: the satellite/client mesh node) against a factory-reset router,
+combined V1 → V2 CAP/UCI against a deliberately prepared gate-open CAP, and the
+direct V2 CAP/LAN short-command primitive in that same CAP laboratory state.
 On the tested physical unit, normal Xiaomi setup set `NETMODE=whc_cap`: V1
 remained exploitable, both CAP-side V2 root routes were blocked, and Direct V2
 RE/WAN was unavailable after the router became an initialized CAP. See
@@ -39,21 +40,6 @@ RE/WAN was unavailable after the router became an initialized CAP. See
 | Firmware | MiWiFi / XiaoQiang `romversion 2.0.28` (analysed and tested) |
 | Component | `/usr/sbin/cab_meshd` (mesh commissioning daemon) |
 | Service | TCP/UDP **19553** on `br-lan` (wired LAN and main Wi-Fi) in CAP mode; outbound discovery and TLS on the selected WAN port in factory RE mode |
-
-### Xiaomi/mesh-specific terminology
-
-| Term | Meaning in this firmware |
-|---|---|
-| **CAP** | Central Access Point: the root/controller mesh node |
-| **RE** | Range Extender: the satellite/client mesh node |
-| **WHC / `xqwhc`** | Xiaomi/Qualcomm whole-home mesh subsystem; the firmware does not clearly spell out the expansion |
-| **BH** | Backhaul: the link between CAP and RE |
-| **NBH** | Non-backhaul band or interface |
-| **APSTA** | Concurrent access-point and station mode |
-| **BSD** | Band-steering or unified-Wi-Fi configuration mode flag; the exact vendor expansion is unclear |
-| **XQ** | XiaoQiang, used in internal firmware names such as `XQSecureUtil` |
-| **`cab`** | Internal component tag in `cab_meshd`; no reliable expansion was found |
-| **MiMesh** | Xiaomi's mesh feature name rather than an acronym |
 
 V1's hard-coded key is **firmware-global and line-wide** — not per-device and not
 specific to this model. It is byte-identical in **28 Xiaomi and Redmi
@@ -250,3 +236,20 @@ third-party or production systems were involved.
 
 **Credit:** Adriel Santos. CVE handling is with CERT/CC and the Xiaomi CNA
 (`CNA-2020-0019`).
+
+---
+
+## Xiaomi/mesh-specific terminology
+
+| Term | Meaning in this firmware |
+|---|---|
+| **CAP** | Central Access Point: the root/controller mesh node |
+| **RE** | Range Extender: the satellite/client mesh node |
+| **WHC / `xqwhc`** | Xiaomi/Qualcomm whole-home mesh subsystem; the firmware does not clearly spell out the expansion |
+| **BH** | Backhaul: the link between CAP and RE |
+| **NBH** | Non-backhaul band or interface |
+| **APSTA** | Concurrent access-point and station mode |
+| **BSD** | Band-steering or unified-Wi-Fi configuration mode flag; the exact vendor expansion is unclear |
+| **XQ** | XiaoQiang, used in internal firmware names such as `XQSecureUtil` |
+| **`cab`** | Internal component tag in `cab_meshd`; no reliable expansion was found |
+| **MiMesh** | Xiaomi's mesh feature name rather than an acronym |
