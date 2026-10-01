@@ -49,9 +49,9 @@ which prints the incoming peer's key (`q38d364d…`) and expected `pass`; the Py
 **V1 is reproducible on demand when the initialized CAP listener is reachable.**
 It does not depend on the CAP root sink's `NETMODE` gate.
 
-## V1-assisted V2 OTA CAP delivery: CONFIRMED end-to-end on physical hardware
+## Combined V1 → V2 CAP/UCI route: CONFIRMED end-to-end on physical hardware
 
-The V1-assisted OTA CAP delivery was reproduced multiple times on the same physical
+The combined V1 → V2 CAP/UCI route was reproduced multiple times on the same physical
 RD03v2 unit. The full sequence runs purely over Wi-Fi with no WAN cable.
 
 ### Procedure
@@ -129,14 +129,14 @@ tcp        0      0 :::443                  :::*                    LISTEN      
 - **The self-repair works**: after the expected Wi-Fi interruption, the AP returns
   with valid encryption, the attacker reconnects, and the process-lifetime reverse
   shell loop reconnects. No boot persistence was installed.
-- **The full delivery is automated**: V1 admin takeover → V2 root RCE → interactive
-  shell, all from a single script (`poc/ota_rce.py`).
+- **The combined route is automated**: V1 admin takeover → UCI plant → V2 root
+  execution → interactive shell, all from `poc/ota_rce.py`.
 
 This does not establish V2 reachability after ordinary Xiaomi web setup.
 
 ---
 
-## V2 RE/WAN — direct root RCE: CONFIRMED end-to-end on physical hardware
+## Direct V2 RE/WAN route: CONFIRMED end-to-end on physical hardware
 
 Test date: 2026-10-01. The router began at factory defaults:
 
@@ -223,7 +223,7 @@ PoC: `poc/re_wan_rce.py`.
 
 ---
 
-## V2 CAP/LAN — direct root RCE: CONFIRMED in emulation (daemon-driven)
+## Direct V2 CAP/LAN research primitive: CONFIRMED in emulation (daemon-driven)
 
 Under the qemu-user harness running the **real stock `cab_meshd` binary and shell
 scripts**, with a clean on-disk config (`NETMODE` unset), a client that completed the
@@ -247,9 +247,9 @@ cannot be evidence of this sink. A brief link interruption can instead come from
 
 ### CAP/LAN hardware evidence boundary
 
-The direct CAP/LAN payload was not executed on the physical unit while it was in
+The direct V2 CAP/LAN payload was not executed on the physical unit while it was in
 the `NETMODE=whc_cap` state, which skips the sink. Its evidence level is therefore
-daemon-driven emulation. The separate factory RE/WAN and V1-assisted OTA CAP paths
+daemon-driven emulation. The separate direct RE/WAN and combined V1 → V2 CAP/UCI routes
 have the physical-hardware evidence documented above.
 
 ## V3 — root credential
@@ -265,9 +265,9 @@ have the physical-hardware evidence documented above.
 ## Footprint / cleanup
 
 V1 testing sends no `type-7` and changes no persistent configuration; it does
-create a web session and update nonce/replay state. The V2 OTA hardware test
+create a web session and update nonce/replay state. The combined V1 → V2 CAP/UCI test
 involved multiple factory-reset + re-init cycles (all reversible; the unit is a
-disposable lab device purchased for this research). The OTA payload modifies the
+disposable lab device purchased for this research). Its payload modifies the
 Wi-Fi `encryption` UCI keys and triggers a `cap_init` reconfiguration; the
 self-repairing payload restores valid encryption afterward. No credential was used
 against the device beyond the automatically-obtained admin session; the

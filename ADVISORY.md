@@ -10,7 +10,7 @@ root command execution (V2)
 | **Status** | **Unpatched** — no fix, fix plan or timeline committed by the vendor as of publication |
 | **Reported** | 2026-08-14 to `security@xiaomi.com`; with CERT/CC via VINCE `VRF#26-09-SFWHW` |
 | **Credit** | Adriel Santos |
-| **PoC** | **Included** — the working V1/V2 PoCs publish with this advisory; see [`poc/`](poc/) and [Mitigations for owners](mitigations.md) |
+| **PoC** | **Included** — V1, the two direct V2 routes, and the combined V1 → V2 route; see [`poc/`](poc/) and [Mitigations for owners](mitigations.md) |
 
 ## Affected
 - **Analysed product:** Xiaomi Router AX3000T, model `xiaomi.router.rd03v2`
@@ -70,7 +70,7 @@ checks `cab_meshd` and the shared HMAC key; it does **not** inspect every model'
 shell scripts. Even for the two script samples, the admin API's `hackCheck`
 character filtering and `parse_json` behavior were not verified end-to-end. The V2
 sink/input-path claim therefore applies to these sampled firmwares, while complete
-V2 delivery is demonstrated only on `RD03v2` `2.0.28`.
+V2 exploitation is demonstrated only on `RD03v2` `2.0.28`.
 
 For the analysed device, V1 alone gives
 administrative control. The shared key and listener code call for line-wide
@@ -110,54 +110,41 @@ logs the attacker in as `admin`.
   the `'q'` role variant. See
   [`evidence/independent-validation.md`](evidence/independent-validation.md).
 
-### V2 — unauthenticated OS command execution as root
-The `cap_init`/`re_init` handlers drive a root shell `eval` with attacker-controlled
-input. V1 itself stops after receiving the type-6 config sync and never reaches
-this sink. In the **V1-assisted OTA CAP delivery**, the admin session minted by V1 plants a
-command-injection payload into Wi-Fi `encryption` UCI keys. The payload passes the
-web input sanitizer `hackCheck` by avoiding its blocked bytes and using permitted
-`\"`, spaces, and `#`; a `type-7` trigger (whose C handler has no connection-state
-check) then fires `cap_init`, whose
-`mimesh_init.sh:717` `eval` executes the raw `encryption` value as root. The direct
-injection variants (base64-laundered via the type-4 plant or RE builder) also reach
-the same V2 sink. The physical OTA test used `poc/init_router.py` as laboratory
-preparation to initialize stock while leaving `NETMODE` unset; this was not an
-attacker capability demonstrated against a normally configured router. The normal web wizard can set
-`NETMODE=whc_cap`; `do_cap_init` skips this sink in that mode. We have not
-demonstrated a non-reset transition from V1 admin to V2 root on such a unit.
+### V2 — root command injection in mesh initialization
+V2 is the unsafe root `eval` reached through `cap_init` or `re_init`. V1 itself
+stops after receiving the type-6 config sync and never reaches this sink. The
+vulnerability has two V2-only exploit routes and one combined V1 → V2 route:
+
+| Exploit route | Relationship and prerequisites | Controlled input | Validation |
+|---|---|---|---|
+| **Direct V2 RE/WAN** | Factory-reset router; attacker on the selected WAN-side L2 segment; no V1, admin session, or initialization helper | Raw type-6 backhaul fields delivered by a rogue CAP | Hardware: direct `uid=0(root)` callback |
+| **Combined V1 → V2 CAP/UCI** | Deliberately prepared CAP with `NETMODE` unset; V1 mints admin, the API plants UCI values, then V2 triggers `cap_init` | Wi-Fi `encryption` values that avoid `hackCheck`'s blocked bytes | Hardware: root callback and interactive shell |
+| **Direct V2 CAP/LAN** | Reachable initialized CAP in the same gate-open state; no V1 or admin API call | Base64 token in the type-4 plant | Emulation: approximately four command characters |
+
+The combined CAP/UCI hardware test used `poc/init_router.py` as laboratory
+preparation. This was not an attacker capability demonstrated against a normally
+configured router. Xiaomi's normal wizard can set `NETMODE=whc_cap`, which causes
+`do_cap_init` to skip the sink; no non-reset transition from that state was shown.
+The direct RE/WAN route instead applies only to the factory/WAN state.
+
 - **CWE-78** (OS command injection).
 - **CVSS 3.1 for both demonstrated adjacent states:**
   `AV:A/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H` → **8.8 (High)**. This is not a claim
-  that the CAP root path is reachable after ordinary web setup. The RE/WAN path
-  has a different prerequisite: WAN-side L2 adjacency to a factory-reset router.
-- **Status: confirmed end-to-end on physical hardware through two paths.** The
-  V1-assisted OTA CAP delivery runs V1 admin takeover → `encryption` payload plant
-  → V2 `cap_init` trigger → root callback → interactive reverse shell. The router
-  does not reboot; Wi-Fi briefly drops during `cap_init`, then returns with the
-  payload's repaired WPA2 configuration. The direct factory RE/WAN path runs WAN
-  DHCP → rogue CAP discovery/TLS/HMAC → type-6 → `uid=0(root)` callback, with no V1
-  or admin session. The direct CAP/LAN path (~4-character one-shot) remains
-  confirmed in emulation. See `poc/ota_rce.py` and `poc/re_wan_rce.py`.
+  that either CAP-side route is reachable after ordinary web setup. Direct
+  RE/WAN has a different prerequisite: WAN-side L2 adjacency to a factory-reset
+  router.
 
-## Secondary findings
-- **V3 — weak root-credential design.** Static shared placeholder in `/etc/shadow`
-  across models/firmware; the real root password is `md5(SN ‖ salt)[:8]`, derivable
-  from the label serial (publicly-reversed `mkxqimage`). Telnet/SSH are locked in
-  2.0.x (no network login surface), so this is a hygiene finding today. **CWE-798 /
-  CWE-1394.**
-- **V4 — latent shared-code RCE `misystem/download_search`.** A `?string` verifier
-  bypasses the web filter into an unquoted root `forkExec`; doubly closed on RD03v2
-  (feature off + realpath/`/mnt` validator) but exploitable on SKUs with
-  `apps.download="1"`. **CWE-78**, shared-code risk.
+## Attack prerequisites
 
-## Attack prerequisites (V1)
+### V1
+
 Same-L2 reach to port 19553 on an initialized CAP listener (wired LAN or main
 Wi-Fi; any other segment only if its firewall permits that port). No
 router-admin or mesh credentials, no user interaction during V1, and no prior
 foothold beyond network access. The
 authenticating key is public (extractable from any unit's firmware).
 
-## Attack prerequisites (RE/WAN root path)
+### Direct V2 RE/WAN
 
 Same-L2 access to the factory-reset router's selected WAN socket, with working
 DHCP/gateway state so its RE client starts and connects outbound. The attacker
@@ -165,7 +152,23 @@ answers broadcast discovery before any legitimate CAP and needs no router-admin,
 mesh credentials, V1 session, or user interaction. A completed `re_init` sets
 `INITTED=YES` and closes this factory path until reset.
 
-## Impact (V1)
+### Combined V1 → V2 CAP/UCI
+
+Main-LAN or main-Wi-Fi access to the deliberately prepared CAP state used in the
+hardware test: `INITTED=YES`, API `get_netmode=0`, and UCI `NETMODE` unset. V1
+requires no pre-existing router credentials; it obtains the admin session used for
+the UCI plant. Reachability after ordinary Xiaomi setup was not demonstrated.
+
+### Direct V2 CAP/LAN
+
+Main-LAN or main-Wi-Fi access to an initialized CAP in the same gate-open state.
+This route needs neither V1 nor an admin API plant, but its approximately
+four-character command primitive was validated in emulation rather than hardware.
+
+## Impact
+
+### V1
+
 Complete administrative control of the router: DNS/WAN/firewall changes and traffic
 interception, Wi-Fi password recovery, and lateral movement to LAN devices. The
 hard-coded key is identical across **28 surveyed model codes**, so one
@@ -176,16 +179,19 @@ The disclosure is also not recent: the type-6 sync message carrying `web_passwd2
 has been retrievable by public, working, unauthenticated code since **March 2023**
 (see [`evidence/independent-validation.md`](evidence/independent-validation.md)).
 
+### V2
+
+Execution as uid 0 gives complete control of the operating system and router
+configuration. The combined CAP/UCI route can interrupt and rewrite Wi-Fi state;
+the direct RE/WAN route completes mesh initialization and changes network state.
+Complete V2 execution is established for RD03v2 `2.0.28`, not for every model that
+contains the shared HMAC key.
+
 ## Status of validation
-V1 validated end-to-end on physical hardware. V2 validated end-to-end on **physical
-hardware through both the minimally initialized CAP path and the factory RE/WAN
-path**. In the V1-assisted OTA CAP delivery, V1 mints admin → plants `encryption` payloads
-→ V2 trigger fires root `eval` → interactive root shell over Wi-Fi. Root callback
-(`uid=0_user=root_host=XiaoQiang`) captured repeatedly; interactive BusyBox ash shell
-with full device enumeration (`netstat -tlnp`, `uname -a`, model `RD03v2`). In the
-RE/WAN path, a factory router connected outbound to a rogue CAP and returned
-`uid=0(root) gid=0(root)` without V1 or initialization. The direct CAP/LAN path
-remains confirmed in emulation. See
+V1 was validated end-to-end on physical hardware. For V2, the **direct RE/WAN**
+and **combined V1 → V2 CAP/UCI** routes were validated end-to-end on physical
+hardware; the **direct V2 CAP/LAN** primitive remains confirmed in emulation. The
+route-specific output and setup boundaries are in
 [`evidence/hardware-validation.md`](evidence/hardware-validation.md).
 
 Two further lines of evidence, both reproducible by the vendor without hardware:
@@ -199,6 +205,18 @@ Two further lines of evidence, both reproducible by the vendor without hardware:
   *different* model (AX3200 / RB01), published three years before this research.
   [`evidence/independent-validation.md`](evidence/independent-validation.md)
   (`verify_public_capture.py` reproduces it; pure computation, sends nothing).
+
+## Secondary findings
+
+- **V3 — weak root-credential design.** Static shared placeholder in `/etc/shadow`
+  across models/firmware; the real root password is `md5(SN ‖ salt)[:8]`, derivable
+  from the label serial (publicly-reversed `mkxqimage`). Telnet/SSH are locked in
+  2.0.x (no network login surface), so this is a hygiene finding today. **CWE-798 /
+  CWE-1394.**
+- **V4 — latent shared-code RCE `misystem/download_search`.** A `?string` verifier
+  bypasses the web filter into an unquoted root `forkExec`; doubly closed on RD03v2
+  (feature off + realpath/`/mnt` validator) but exploitable on SKUs with
+  `apps.download="1"`. **CWE-78**, shared-code risk.
 
 ## Prior art and novelty
 
@@ -264,7 +282,7 @@ modules all call `web_login()` and derive a `stok` first. Those web-API exploits
 closed on 2.0.x by `hackCheck` v3
 (`XQSecureUtil.filterChars = "[=[\n[`;|$&\n]]=]"`) — a **Lua web-API** filter. A
 native C daemon on its own socket was never in its scope, which is why `cab_meshd`
-came through that hardening pass untouched. The V2 OTA payload also fits around
+came through that hardening pass untouched. The combined CAP/UCI payload also fits around
 that filter: `encryption` is filtered, but `\"`, spaces, and `#` remain permitted
 and are sufficient to break out at the later shell `eval`.
 

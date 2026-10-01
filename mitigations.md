@@ -65,9 +65,10 @@ Worth stating plainly, because these are the intuitive moves:
 **Treat the LAN as the security boundary it now is.**
 
 1. **Know who is on your network.** A client that can reach the CAP listener can
-   obtain web-admin access. The demonstrated CAP root path additionally requires a
-   gate-open mode; the factory RE/WAN root path has separate prerequisites described
-   above. See [`v2-root-rce.md`](v2-root-rce.md). Remove unknown clients.
+   obtain web-admin access. The combined V1 → V2 CAP/UCI route and direct V2 CAP/LAN
+   primitive additionally require a gate-open mode; the direct V2 RE/WAN route has
+   separate factory-state prerequisites. See [`v2-root-rce.md`](v2-root-rce.md).
+   Remove unknown clients.
 2. **Keep guest isolation enabled and verify it.** Stock RD03v2 guest Wi-Fi uses
    a separate bridge whose firewall rejects port 19553; a custom bridge or
    firewall rule could change that. This boundary is established from the shipped
@@ -135,8 +136,8 @@ evidence of absence.
 
 **`NETMODE=whc_cap` is not a compromise indicator.** The router's
 `api/xqnetwork/get_netmode` API reports it as `4`, but normal setup can produce
-that value without an exploit. It only tells you that the demonstrated CAP
-root path is gated in the current state. The shell also gates the sink when
+that value without an exploit. It only tells you that the demonstrated CAP-side
+V2 routes are gated in the current state. The shell also gates the sink when
 `NETMODE=lanapmode` and `CAP_MODE=ap`.
 
 **Other indicators worth checking:**
@@ -144,7 +145,7 @@ root path is gated in the current state. The shell also gates the sink when
 - Admin password changed, or a logged-in session you do not recognise.
 - Port-forwarding or DMZ rules you did not create.
 - Unexplained reboots, or Wi-Fi configuration that changed on its own (the exploit
-  rewrites wireless UCI keys during the V1-assisted OTA delivery and repairs them
+  rewrites wireless UCI keys during the combined V1 → V2 CAP/UCI route and repairs them
   afterwards — an
   interrupted run can leave the radios misconfigured).
 - Unknown clients in the device list.

@@ -79,8 +79,8 @@ into the LAN behind it.
 telnet-enable endpoints (`get_telnet`/`set_telnet`) are removed in 2.0.x (confirmed
 live: "No page is registered"), and an independent audit found no authenticated
 web request that directly executes a root command (see `secondary-findings.md`).
-The separate V1-assisted V2 delivery uses an admin API only to store payload data,
-then a mesh `cap_init` trigger reaches V2's root `eval`. V1 by itself is scoped as
+The separate combined V1 → V2 CAP/UCI route uses an admin API only to store payload
+data, then a mesh `cap_init` trigger reaches V2's root `eval`. V1 by itself is scoped as
 **unauthenticated → full admin**, rated High; it does not establish a uid-0 shell.
 
 ## Proof on physical hardware

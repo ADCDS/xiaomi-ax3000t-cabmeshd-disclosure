@@ -63,7 +63,7 @@ is closed (attacker fields are urlencoded / shell-quote-escaped / `tonumber`'d b
 the root `eval`; the only raw-substituted fields have no writer), config
 backup/restore is closed, `upgradeRom` is filtered, and the remaining direct shell
 sinks are format-constrained, base64, numeric, or filtered. The authenticated
-`set_wifi_without_restart` API is nevertheless the **storage leg** of the
-V1-assisted V2 delivery: it writes raw `encryption` values, then a separate
+`set_wifi_without_restart` API is nevertheless the **storage leg** of the combined
+V1 → V2 CAP/UCI route: it writes raw `encryption` values, then a separate
 `cab_meshd` type-7 trigger carries them into V2's root `eval`. V1 alone does not
-provide a uid-0 shell; the combined delivery uses the web API plant and mesh sink.
+provide a uid-0 shell; the combined route uses the web API plant and mesh sink.

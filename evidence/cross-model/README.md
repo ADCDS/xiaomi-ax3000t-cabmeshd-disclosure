@@ -82,9 +82,9 @@ with **no feature flag on the CAP branch** (`meshSupportRE` gates only the RE br
 Its binary carries the same protocol strings and debug format string. The V2 sink and
 its input path are present too, at `mimesh_init.sh:593` and `mesh_connect.sh:920`.
 This supports a V1 candidate on `RD05`; complete web-admin login was not
-tested on that hardware. Complete V2 delivery was demonstrated only on `RD03v2`
-`2.0.28`: the gate-open OTA CAP and factory RE/WAN paths on hardware, and the
-direct CAP/LAN path in emulation. See the advisory for those distinctions.
+tested on that hardware. Complete V2 exploitation was demonstrated only on `RD03v2`
+`2.0.28`: the combined CAP/UCI and direct RE/WAN routes on hardware, and the
+direct V2 CAP/LAN primitive in emulation. See the advisory for those distinctions.
 
 ### These devices may have no route to a patch
 

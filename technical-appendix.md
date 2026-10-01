@@ -173,7 +173,7 @@ additional encoder headroom.
 3. **Secret material (admin hash) shipped to peers** in the sync config (§7) →
    **V1**, the confirmed admin takeover.
 4. **Attacker-controlled mesh initialization values are reparsed by a root
-   `eval`.** The V1-assisted CAP delivery supplies raw UCI `encryption` values;
+   `eval`.** The combined V1 → V2 CAP/UCI route supplies raw UCI `encryption` values;
    direct CAP/LAN uses an attacker-preencoded type-4 plant, unquoted `$@` splitting,
    and `base64 -d`; the RE/WAN builder base64-encodes raw type-6 fields before
    `do_re_init` decodes them. These are V2 inputs; V1 itself ends at the type-6
@@ -183,4 +183,4 @@ additional encoder headroom.
    (`NETMODE=whc_cap`, or `NETMODE=lanapmode` with `CAP_MODE=ap`) can block the
    CAP/LAN path before the sink. The factory RE/WAN path reaches
    `re_init` without that gate and is confirmed on hardware. See
-   `v2-root-rce.md` for the prerequisites and evidence of each delivery path.
+   `v2-root-rce.md` for the prerequisites and evidence of each exploit route.
