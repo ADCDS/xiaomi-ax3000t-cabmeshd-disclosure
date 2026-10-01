@@ -1,4 +1,4 @@
-# Chain 1 — pre-auth admin-password-hash disclosure → admin takeover
+# V1 — pre-auth admin-password-hash disclosure → admin takeover
 
 **Severity: High (CVSS 3.1: 8.8).** An adjacent client that can reach TCP 19553
 obtains the router's web-admin login verifier and logs in as `admin`, without
@@ -15,12 +15,15 @@ inside the mesh config-sync message.
 
 ## Preconditions
 
-- Network reach to TCP 19553 (same L2 segment: wired LAN or Wi-Fi).
+- Network reach to TCP 19553 on `br-lan` (wired LAN or main Wi-Fi).
 - The device is initialised (`INITTED=YES`) and running as a mesh CAP (`-S`), the
   normal state of a deployed router. Port 19553 is closed until then; on a factory
   unit the owner's first setup opens it.
 
 No router-admin password or client certificate is needed after network access.
+The `NETMODE=whc_cap` shell guard applies to V2's CAP root sink, not to this
+verifier disclosure; V1 remains reachable when the initialized CAP listener is
+open.
 
 ## The disclosure
 
@@ -59,7 +62,7 @@ checkNonce(nonce, remote_mac):          nonce = "<type>_<mac>_<time>_<rand>",
 
 (`XQSecureUtil.lua`, `getEncryptMode()==1` — true whenever `account.legacy`
 exists, which it does on shipped units.) With `stored_hash = web_passwd256` from
-Chain 1, the attacker sets `password = sha256(nonce .. web_passwd256)` and a live
+V1, the attacker sets `password = sha256(nonce .. web_passwd256)` and a live
 UNIX timestamp for the nonce, and the login succeeds. The response returns a valid
 `stok` (session token) for the admin UI.
 
@@ -76,8 +79,7 @@ telnet-enable endpoints (`get_telnet`/`set_telnet`) are removed in 2.0.x (confir
 live: "No page is registered"), and an independent audit found no authenticated
 web endpoint that reaches a root shell (see `secondary-findings.md`). So this
 finding is scoped precisely as **unauthenticated → full admin**, rated High; it
-is not claimed as admin → root. (An earlier draft overstated this via
-`set_telnet`; corrected.)
+does not establish an admin → root path.
 
 ## Proof on physical hardware
 
@@ -91,7 +93,8 @@ is not claimed as admin → root. (An earlier draft overstated this via
 ```
 
 The PoC stops before the `type-7` that would trigger reconfiguration, so it is
-**read-only against the target** — it changes nothing on the device. See
+non-destructive to persistent configuration. The login does create session and
+nonce/replay state. See
 [`evidence/hardware-validation.md`](evidence/hardware-validation.md).
 
 ## Note on the leaked hash format

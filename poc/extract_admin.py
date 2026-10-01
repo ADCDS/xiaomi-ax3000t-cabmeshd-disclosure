@@ -16,9 +16,9 @@ Two device-independent facts chain into full admin access with no credentials:
 So: leak the hash over the mesh port (A), then mint an admin session from it (B).
 No password is ever guessed or cracked -- the router hands over the verifier.
 
-This is READ-ONLY against the target: the mesh half stops before the type-7 that
-would trigger cap_init (no wifi reconfiguration), and the web half only logs in
-and reads. Nothing is written.
+This does not alter persistent configuration: the mesh half stops before the
+type-7 that would trigger cap_init, while the web half creates an admin session
+and advances transient nonce/replay state before reading authenticated data.
 
 Usage:
     ./extract_admin.py --host 192.168.31.1

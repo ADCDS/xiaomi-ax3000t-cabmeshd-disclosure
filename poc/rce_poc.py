@@ -6,8 +6,8 @@ TCP 19553 with no credentials. Confirmed end-to-end in emulation on the stock
 binary + shell scripts: the daemon-driven 4->5->7 handshake below drove the
 mimesh_init eval and created a root-owned file.
 
-Delivery (this is the part an earlier version got wrong): the base64'd command must
-go in the TYPE-4 PLANT field, body[0x90] -> conn+0x10e, NOT in the MAC header field.
+Delivery: the base64'd command must go in the TYPE-4 PLANT field,
+body[0x90] -> conn+0x10e, not in the MAC header field.
 A five-word pad shifts the base64 into do_cap_init's $6, which is base64 -d'd into
 mimesh_init's eval:
     type-4 body[0x90] = "a a a a a " + base64(`CMD`)
@@ -19,9 +19,10 @@ Constraints (CAP/LAN path):
     -> ~6 raw bytes incl. backticks -> a ~4-character command. This is a genuine
     but tightly-budgeted gate-open primitive. The separate RE/WAN path has a
     larger 32/64-byte reliable budget and is confirmed end-to-end on hardware.
-  * A completed cap_init can set NETMODE=whc_cap and close the sink. Normal web
-    setup can set the same mode without a prior exploit. Treat the trigger as
-    potentially one-shot and check the mode before using it.
+  * Supported reproduction uses API get_netmode=0 with UCI NETMODE unset. The
+    shell skips the sink for NETMODE=whc_cap, and for NETMODE=lanapmode together
+    with CAP_MODE=ap. A completed cap_init can close the sink. Treat the trigger
+    as potentially one-shot and check the mode before using it.
   * The C blacklist (check_injection, 0xe2c9) is bypassed structurally: cab_meshd
     base64-encodes the field before checking, so the blacklist only sees base64.
 

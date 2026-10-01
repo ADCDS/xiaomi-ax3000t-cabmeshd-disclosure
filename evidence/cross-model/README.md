@@ -12,9 +12,10 @@ and Redmi router model codes**, across **three CPU architectures** (ARM64, ARM32
 MIPS32el), spanning **Wi-Fi 5, Wi-Fi 6 and Wi-Fi 7 generations**, in firmware that
 Xiaomi is **still building and shipping today**.
 
-Every row below was produced by downloading stock firmware — in all but one case
-directly from Xiaomi's own CDN — extracting `/usr/sbin/cab_meshd`, and testing for
-the key. No hardware is required to reproduce any of it.
+Every confirmed row below comes from an exact source pinned in
+[`sources.tsv`](sources.tsv): 26 Xiaomi CDN images and two public filesystem dumps.
+The sweep extracts `/usr/sbin/cab_meshd` and tests for the key. No hardware is
+required to reproduce it.
 
 ## Results
 
@@ -51,8 +52,8 @@ the key. No hardware is required to reproduce any of it.
 | `RM1800` | Redmi AX1800 (RM1800) | 1.0.399 | ARM32 (EABI5) | **YES** | `805bc8018d2950fa` | Xiaomi CDN |
 | `R3600` | Xiaomi AIoT Router AX3600 | 1.1.25 | ARM64 (aarch64) | **YES** | `5b3fc6e8d496d087` | Xiaomi CDN |
 
-Full detail — complete hashes, sizes, and the exact firmware URL used for each row —
-is in [`results.tsv`](results.tsv).
+Full detail — complete hashes, sizes, and the exact source used for each row — is in
+[`results.tsv`](results.tsv).
 
 ### Not confirmed
 
@@ -99,7 +100,7 @@ firmware bump on each affected model.
 **`RD03v2` — the analysed device — has an official public 2.0.28 image.** Xiaomi's
 signed [`miwifi_rd03v2_firmware_31bf9_2.0.28.bin`](https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/rd03v2/miwifi_rd03v2_firmware_31bf9_2.0.28.bin)
 has SHA-256 `3138342e564c7d7482fde4a90e1778830180f0eac15e1de5f3ad269f9ba9940f`.
-The static recheck of that image complements the physical results in
+Static analysis of that image complements the physical results in
 [`../hardware-validation.md`](../hardware-validation.md).
 
 ### OpenWrt is model-specific, not a line-wide escape
@@ -180,32 +181,40 @@ Independently of this string-presence sweep, the key is confirmed *functionally*
 authentication token that this key reproduces byte-for-byte. See
 [`../independent-validation.md`](../independent-validation.md).
 
-## Why one key is shared — Xiaomi's own position
+## Why remediation must be line-wide
 
-Xiaomi publicly commits to cross-model mesh interoperability across this entire
+Xiaomi documents cross-model mesh interoperability across this product generation:
 product generation: *"Routers released after Mi AIoT Router AX3600 support mesh
 networking with different models of routers"*
 (<https://www.mi.com/global/support/article/KA-08474/>), with a maintained
 compatibility list at <https://www.miwifi.com/mesh_device/index.html>.
 
-That commitment is the reason a single global key exists. It is also why **a
-per-model patch does not resolve this**: any model left on the shared key keeps the
-key valid everywhere. The fix has to be architectural — see
+Those public materials do not establish why Xiaomi chose a global key. The binary
+evidence itself establishes why **a per-model patch does not resolve this**: any
+model left on the shared key keeps the authenticator exposed across the remaining
+line. The fix has to be architectural — see
 [`../../remediation.md`](../../remediation.md).
 
 ## Method / reproduction
 
-[`sweep.sh`](sweep.sh) performs the whole sweep. For each model code it resolves the
-newest stock image from the public ROM index, downloads it from Xiaomi's CDN,
-extracts `/usr/sbin/cab_meshd` (handling both bare-squashfs and UBI container
-layouts), and greps for the key.
+[`sweep.sh`](sweep.sh) performs the whole sweep from [`sources.tsv`](sources.tsv).
+For CDN rows it downloads the exact image and handles bare SquashFS and UBI layouts.
+For the RD23 and RD05 public dumps it fetches the pinned Git commit and selects the
+recorded extracted-file path. It emits the same nine-column schema as the committed
+[`results.tsv`](results.tsv).
 
 ```sh
-./sweep.sh          # writes results.tsv + sweep.log
+./sweep.sh
+# writes results.generated.tsv + results.generated.log
+# exits nonzero and prints a diff command if it differs from results.tsv
+
+# optional isolated output/work locations or a subset:
+OUTPUT_TSV=/tmp/results.tsv LOG_FILE=/tmp/sweep.log \
+  WORK_DIR=/tmp/cabmeshd-work ONLY_CODES="RD23 RD05" ./sweep.sh
 ```
 
-Requires `curl`, `binwalk`, `unsquashfs`, and `ubireader` (for UBI images). To spot-
-check a single model without the script:
+Requires `curl`, `git`, `file`, `binwalk`, `unsquashfs`, and `ubireader` (for UBI
+images). To spot-check a single model without the script:
 
 ```sh
 curl -O https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/ra70/miwifi_ra70_firmware_cc424_1.0.168.bin

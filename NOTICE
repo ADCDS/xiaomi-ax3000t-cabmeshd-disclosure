@@ -32,11 +32,12 @@ test unit to restore the starting state.
 3. The mode gate can close
 --------------------------
 The demonstrated CAP command-injection sink is skipped when
-`NETMODE=whc_cap`. A completed `cap_init` can set that mode, but normal Xiaomi
+`NETMODE=whc_cap`, and when `NETMODE=lanapmode` with `CAP_MODE=ap`. A completed
+`cap_init` can set the first mode, while normal Xiaomi
 web setup can set it too; it is not evidence that a prior exploit ran. Treat
 the trigger as potentially one-shot and do not fire it unless the setup state
 has been checked. `poc/ota_rce.py` refuses to plant or fire unless it confirms
-the gate-open mode used in the hardware test. See `CORRECTIONS.md`.
+the gate-open mode used in the hardware test. See `v2-root-rce.md`.
 
 The RE/WAN path does not use the CAP `NETMODE` gate. It is reachable only while
 the router is uninitialized, and a successful run closes itself by completing

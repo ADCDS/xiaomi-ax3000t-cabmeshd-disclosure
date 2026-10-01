@@ -1,0 +1,30 @@
+code	product	fw	src	kind	url	ref	member
+RD03	Xiaomi AX3000T (CN)	1.0.98	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/rd03/miwifi_rd03_firmware_48abd_1.0.98.bin	-	-
+RD23	Xiaomi AX3000T (International)	1.0.91_INT	public dump	git	https://github.com/bakabtw/miwifi_rd23_firmware	b014392a72721ee0a53612e9b2478347dde62285	ubifs-root/miwifi_rd23_firmware_8d757_1.0.91_INT.bin/squashfs-root/usr/sbin/cab_meshd
+RD15	Xiaomi BE3600 2.5G	1.0.87	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/rd15/miwifi_rd15_firmware_0321a_1.0.87.bin	-	-
+RD16	Xiaomi BE3600	1.0.41	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/rd16/miwifi_rd16_firmware_66d5e_1.0.41.bin	-	-
+RD18	Xiaomi BE5000	1.0.91	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/rd18/miwifi_rd18_firmware_05f43_1.0.91.bin	-	-
+RD08	Xiaomi BE6500 Pro	1.1.96	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/rd08/miwifi_rd08_firmware_708c2_1.1.96.bin	-	-
+RC06	Xiaomi BE7000	1.1.38	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/rc06/miwifi_rc06_firmware_65d1d_1.1.38.bin	-	-
+RC01	Xiaomi Router BE10000	1.1.56	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/rc01/miwifi_rc01_firmware_5a1e1_1.1.56.bin	-	-
+RN02	Xiaomi BE6500	1.0.42	Xiaomi CDN	firmware	http://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/rn02/miwifi_rn02_firmware_b5e76_1.0.42.bin	-	-
+RD05	Mi Router 4A Gigabit Ed.	(dump)	public dump	git	https://github.com/bakabtw/miwifi_rd05_firmware	a6be42ecdf07b41b76f413b0a882a3a6d9f92432	squashfs-root/usr/sbin/cab_meshd
+RD13	Xiaomi Mesh System AC1200	-	-	unavailable	-	-	-
+RD01	Xiaomi (RD01)	1.0.31	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/rd01/miwifi_rd01_firmware_fb4e9_1.0.31.bin	-	-
+RD02	Xiaomi (RD02)	1.0.23	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/rd02/miwifi_rd02_firmware_eaf51_1.0.23.bin	-	-
+RB01	Xiaomi AX3200	1.0.83_INT	Xiaomi CDN (eu.bigota)	firmware	https://eu.bigota.miwifi.com/xiaoqiang/rom/rb01/miwifi_rb01_firmware_d8243_1.0.83_INT.bin	-	-
+RB03	Redmi AX6S	1.0.57	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/rb03/miwifi_rb03_firmware_83db5_1.0.57.bin	-	-
+RB04	Xiaomi (RB04)	1.0.95	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/rb04/miwifi_rb04_firmware_aaf56_1.0.95.bin	-	-
+RB06	Redmi AX6000	1.0.67	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/rb06/miwifi_rb06_firmware_de54d_1.0.67.bin	-	-
+RB08	Xiaomi (RB08)	1.0.75	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/rb08/miwifi_rb08_firmware_295c6_1.0.75.bin	-	-
+RA67	Redmi AX5	1.0.105	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/ra67/miwifi_ra67_firmware_59980_1.0.105.bin	-	-
+RA69	Redmi AX6	1.1.17	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/ra69/miwifi_ra69_firmware_6a8dd_1.1.17.bin	-	-
+RA70	Xiaomi AX9000	1.0.168	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/ra70/miwifi_ra70_firmware_cc424_1.0.168.bin	-	-
+RA71	Redmi AX1800	1.0.93	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/ra71/miwifi_ra71_firmware_f91f7_1.0.93.bin	-	-
+RA72	Xiaomi AX6000	1.0.122	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/ra72/miwifi_ra72_firmware_87010_1.0.122.bin	-	-
+RA74	Redmi AX5400	1.0.63	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/ra74/miwifi_ra74_firmware_7937d_1.0.63.bin	-	-
+RA80	Xiaomi AX3000	1.0.58	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/ra80/miwifi_ra80_firmware_424a8_1.0.58.bin	-	-
+RA81	Redmi AX3000	1.0.68	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/ra81/miwifi_ra81_firmware_0c1ca_1.0.68.bin	-	-
+RA82	Xiaomi Mesh System AX3000	1.4.31_INT	Xiaomi CDN	firmware	https://cdn.awsde0-fusion.fds.api.mi-img.com/xiaoqiang/rom/ra82/miwifi_ra82_firmware_db06e_1.4.31_INT.bin	-	-
+RM1800	Redmi AX1800 (RM1800)	1.0.399	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/rm1800/miwifi_rm1800_firmware_33344_1.0.399.bin	-	-
+R3600	Xiaomi AIoT Router AX3600	1.1.25	Xiaomi CDN	firmware	https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/r3600/miwifi_r3600_firmware_79ecc_1.1.25.bin	-	-

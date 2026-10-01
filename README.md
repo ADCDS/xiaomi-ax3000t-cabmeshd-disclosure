@@ -2,22 +2,14 @@
 
 An adjacent client that can reach an initialized CAP's `cab_meshd` can obtain
 **web-admin access without the admin password** (V1). On RD03v2 stock 2.0.28,
-we also demonstrated a V1 → V2 chain to an interactive root shell after minimal
+we also demonstrated V1-assisted V2 delivery to an interactive root shell after minimal
 initialization left `NETMODE` unset. Normal Xiaomi web setup can instead set
 `NETMODE=whc_cap`, which blocks the demonstrated `cap_init` root path. The root
 callback and interactive shell were confirmed on physical hardware in the
 gate-open state; reachability after ordinary web setup has not been shown. A
-second path is now confirmed on factory-reset hardware: an attacker on the WAN-side
-L2 segment can impersonate a CAP and drive the uninitialized RE client directly to
+separate factory-reset path allows an attacker on the WAN-side
+L2 segment to impersonate a CAP and drive the uninitialized RE client directly to
 root command execution, without V1, an admin session, or `init_router.py`.
-
-> **Scope clarification, 2026-09-28:** Read [`CORRECTIONS.md`](CORRECTIONS.md)
-> for the setup-state evidence and corrections to the original publication.
->
-> **Hardware update, 2026-10-01:** The RE/WAN path was reproduced end-to-end on
-> physical RD03v2 hardware. Read [`evidence/hardware-validation.md`](evidence/hardware-validation.md)
-> and [`chain2-root-rce.md`](chain2-root-rce.md) for the corrected wire layout,
-> argument-position requirements, and one-shot behavior.
 
 > ### Published 2026-09-28
 >
@@ -25,7 +17,8 @@ root command execution, without V1, an admin session, or `init_router.py`.
 > Xiaomi on **2026-08-14** on a stated 45-day timeline. Nothing is patched.
 >
 > **It ships working proof-of-concept code for both hardware-confirmed root
-> paths** — the initialized, gate-open OTA chain and the factory RE/WAN chain —
+> paths** — the initialized, gate-open V1-assisted OTA delivery and the factory
+> RE/WAN path —
 > because for the analysed model, the **Xiaomi AX3000T
 > (`RD03v2`)**, escaping to OpenWrt is the only path off the vulnerable firmware, and
 > the exploit is what makes that install possible without opening the case. That
@@ -44,7 +37,22 @@ root command execution, without V1, an admin session, or `init_router.py`.
 | Device | Xiaomi Router AX3000T (`xiaomi.router.rd03v2`, hardware `RD03v2`) |
 | Firmware | MiWiFi / XiaoQiang `romversion 2.0.28` (analysed and tested) |
 | Component | `/usr/sbin/cab_meshd` (mesh commissioning daemon) |
-| Service | TCP/UDP **19553** on LAN / Wi-Fi in CAP mode; outbound discovery and TLS on the selected WAN port in factory RE mode |
+| Service | TCP/UDP **19553** on `br-lan` (wired LAN and main Wi-Fi) in CAP mode; outbound discovery and TLS on the selected WAN port in factory RE mode |
+
+### Xiaomi/mesh-specific terminology
+
+| Term | Meaning in this firmware |
+|---|---|
+| **CAP** | Central Access Point: the root/controller mesh node |
+| **RE** | Range Extender: the satellite/client mesh node |
+| **WHC / `xqwhc`** | Xiaomi/Qualcomm whole-home mesh subsystem; the firmware does not clearly spell out the expansion |
+| **BH** | Backhaul: the link between CAP and RE |
+| **NBH** | Non-backhaul band or interface |
+| **APSTA** | Concurrent access-point and station mode |
+| **BSD** | Band-steering or unified-Wi-Fi configuration mode flag; the exact vendor expansion is unclear |
+| **XQ** | XiaoQiang, used in internal firmware names such as `XQSecureUtil` |
+| **`cab`** | Internal component tag in `cab_meshd`; no reliable expansion was found |
+| **MiMesh** | Xiaomi's mesh feature name rather than an acronym |
 
 V1's hard-coded key is **firmware-global and line-wide** — not per-device and not
 specific to this model. It is byte-identical in **28 Xiaomi and Redmi
@@ -65,7 +73,7 @@ key from the rest of the line.**
 
 ---
 
-## Primary finding — pre-auth admin takeover (confirmed)
+## V1 — pre-auth admin takeover (confirmed)
 
 An attacker who can reach TCP 19553 completes the mesh handshake using a
 **hard-coded, firmware-global HMAC key** — no per-device secret, no client
@@ -78,7 +86,7 @@ computes `sha256(nonce ‖ web_passwd256)` and logs into the web UI as `admin`.
   no memory corruption or user interaction during V1.
 - **Unconditional** — fires the moment `ST_RUNNING` is reached.
 - **Confirmed end-to-end on physical hardware** (leaked the verifier, minted a
-  valid admin session, read back real admin data). → [`chain1-admin-takeover.md`](chain1-admin-takeover.md)
+  valid admin session, read back real admin data). → [`v1-admin-takeover.md`](v1-admin-takeover.md)
 
 Full admin over the router is itself total compromise: rewrite DNS to MITM all
 traffic, open WAN management / port-forwards, disable the firewall, read Wi-Fi and
@@ -96,11 +104,12 @@ The enabling design flaws:
 
 ---
 
-## Primary finding #2 — unauthenticated root RCE (confirmed on hardware)
+## V2 — unauthenticated root RCE (confirmed on hardware)
 
 The same `eval` sink that V1's handshake reaches also accepts attacker-controlled
-Wi-Fi configuration values planted via the admin API. V1 → V2 chains into a
-**full-length, over-the-air root RCE** with an interactive root shell. This was
+Wi-Fi configuration values planted via the admin API. In the V1-assisted path,
+V1 supplies the admin session used to plant a full-length payload, producing an
+**over-the-air root RCE** with an interactive root shell. This was
 **confirmed end-to-end on physical RD03v2 hardware after the minimal
 `init_router.py` setup left `NETMODE` unset**. The normal Xiaomi setup path can
 set `whc_cap`, which gates this sink; a non-reset bypass from that state has not
@@ -112,13 +121,21 @@ L2 segment can answer discovery, authenticate with the firmware-global `x` key,
 and deliver a type-6 `re_init` payload that reaches the same root `eval`. This
 direct path needs no V1, web login, admin API call, or prior initialization.
 
-### OTA combined chain (the headline result)
+### V1-assisted OTA CAP delivery
+
+**Demonstrated preparation:** factory-reset the router, run
+`poc/init_router.py --host 192.168.31.1 --reboot`, and verify that it returns as
+an initialized CAP with `INITTED=YES` and `NETMODE` unset. This laboratory setup
+is required before `ota_rce.py` can reach the tested CAP listener; it is not part
+of V1 or V2 and does not represent a capability demonstrated against a normally
+configured router.
 
 1. V1 leaks `web_passwd256` over Wi-Fi → mints an admin `stok`.
 2. Admin API (`set_wifi_without_restart`) plants command-injection payloads into the
    `encryption` UCI keys for the 2.4 GHz and 5 GHz bands. These fields are **exempt**
    from `hackCheck` (the web input sanitizer that blocks `` ;|$& ``), so arbitrary
-   shell metacharacters pass through. The SSID is preserved (no visible change).
+   shell metacharacters pass through. The plant preserves the SSID and does not
+   restart the radios; the later trigger briefly drops Wi-Fi during reconfiguration.
 3. A `type-4→5→7` trigger fires `cap_init`. Inside `do_cap_init`,
    `mgmt_2g=$(uci get wireless.<iface>.encryption)` reads the poisoned value
    **raw** (not base64-laundered) and passes it into `mimesh_init.sh:717`'s `eval`.
@@ -126,14 +143,15 @@ direct path needs no V1, web login, admin API call, or prior initialization.
    `parse_json` quoting via `\"`→`"` un-escaping. `eval` becomes
    `mgmt_2g="" wget … #"…` — the shell assignment-prefix trick runs `wget` as root.
    The 5 GHz band carries `\" sh /tmp/x #`, executing the downloaded stager.
-5. The stager calls back (`uid=0`), self-repairs the Wi-Fi (restores valid `psk2`
-   encryption so the AP stays online), and opens a persistent reconnecting reverse
-   shell.
+5. The stager calls back (`uid=0`), restores valid `psk2` encryption, and opens a
+   persistent reconnecting reverse shell. The AP briefly drops, then returns with
+   the repaired WPA2 configuration.
 
-- **Unlimited payload budget** — the `encryption` field has no length cap.
+- **No small field-specific payload cap was found** for `encryption`; ordinary
+  HTTP, nginx, UCI, shell, and process limits still apply.
 - **Confirmed on physical hardware**: root callback (`uid=0_user=root`), interactive
   BusyBox ash root shell, full `netstat -tlnp`, device model `RD03v2`.
-- **CWE-78.** → [`chain2-root-rce.md`](chain2-root-rce.md)
+- **CWE-78.** → [`v2-root-rce.md`](v2-root-rce.md)
 
 ### Direct injection variants
 
@@ -141,7 +159,8 @@ The `eval` sink is also reachable through two direct non-admin injection paths:
 
 - **CAP/LAN variant** (initialized, gate-open router): a **~4-character** command
   via the type-4 plant. A completed `cap_init` can set `NETMODE=whc_cap` and
-  close this path; normal setup can set the same mode.
+  close this path; the shell also skips `lanapmode` with `CAP_MODE=ap`. The tested
+  state had API `get_netmode=0` and UCI `NETMODE` unset.
 - **RE/WAN variant** (factory-reset router): **confirmed end-to-end on physical
   hardware**. The router obtained a WAN DHCP lease, broadcast discovery, accepted
   the predicted `x38d…` CAP authenticator, and executed
@@ -150,7 +169,7 @@ The `eval` sink is also reachable through two direct non-admin injection paths:
   factory reset. The reliable non-overlapping field budgets are 32 bytes for
   `bh_ssid` and 64 bytes for `bh_pswd`; the encoder itself permits 36/66 bytes.
 
-The OTA combined chain permits a full payload in the tested gate-open CAP state.
+The V1-assisted OTA delivery permits a full payload in the tested gate-open CAP state.
 
 ## Secondary findings
 
@@ -174,10 +193,9 @@ Presented with their evidence status — see
 
 ```
 README.md                    this file
-CORRECTIONS.md               dated setup-state and scope clarification
 ADVISORY.md                  formal advisory (CVSS, CWEs, affected versions)
-chain1-admin-takeover.md     PRIMARY #1 — admin takeover (V1), full writeup
-chain2-root-rce.md           PRIMARY #2 — root RCE (V2), full writeup
+v1-admin-takeover.md         V1 — admin takeover, full writeup
+v2-root-rce.md               V2 — root RCE paths and prerequisites, full writeup
 technical-appendix.md        cab_meshd internals: key, handshake, wire protocol, addresses
 secondary-findings.md        credentials (V3), download_search (V4)
 remediation.md               recommended fixes, for the vendor
@@ -193,13 +211,12 @@ evidence/
   cross-model/               the key across the Xiaomi router line: method, results, hashes
 poc/
   README.md                  how to run the PoCs
-  init_router.py             brings a factory unit into the testable (initialised) state
+  init_router.py             prepares the gate-open CAP laboratory state
   handshake.py               mesh protocol driver (auth to ST_RUNNING; dumps sync config)
   extract_admin.py           PRIMARY PoC — leak verifier -> mint admin session
-  ota_rce.py                 PRIMARY PoC — full OTA root RCE (V1+V2 combined), confirmed on hardware
+  ota_rce.py                 V1-assisted V2 CAP delivery, confirmed on hardware
   re_wan_rce.py              direct factory RE/WAN root RCE, confirmed on hardware
   rce_poc.py                 research PoC for the direct injection sink (CAP/LAN path)
-  exploit.py                 historical non-working CAP driver retained for analysis
 ```
 
 ## Disclosure
@@ -211,19 +228,19 @@ poc/
 | 2026-08-17 | Xiaomi Security Center acknowledged (**day 3**). Full technical package sent, encrypted to the MiSRC PGP key |
 | 2026-09-11 | **Day 28** — no substantive technical response in the 25 days since acknowledgement. Report filed with CERT/CC via VINCE: **`VRF#26-09-SFWHW`** |
 | **2026-09-28** | **Day 45 — publication.** Technical advisory *and* weaponised proof-of-concept, together |
-| **2026-10-01** | Factory RE/WAN path reproduced end-to-end on RD03v2 hardware; direct `uid=0(root)` callback without V1 or initialization |
 
 The initial notification said weaponised PoC code would be withheld for a further
 **30 days after a fix**. That plan was **changed on 2026-09-11**, and the change is
 recorded in the coordination log. The reasoning: Xiaomi has not confirmed
 reproduction, has committed to no timeline, and its published policy allows 180 days
-*after a fix plan is complete*. Part of the affected range (RD05, RD13, RA82) appears
-to have no update channel at all. Holding the exploit indefinitely would leave owners
-of unpatched devices with nothing they can act on — the opposite of the point.
+*after a fix plan is complete*. Verified-affected RD05 and RA82, plus unconfirmed
+RD13, appear to have no update channel at all. Holding the exploit indefinitely
+would leave owners of unpatched devices with nothing they can act on — the opposite
+of the point.
 
 **Why the PoC ships with the advisory.** The objective is to let owners of the
 analysed model — the **Xiaomi AX3000T (`RD03v2`)** — install OpenWrt **over the air**,
-without opening the case or attaching UART. That capability *is* the exploit chain, so
+without opening the case or attaching UART. That capability depends on the exploit code, so
 the installer and the exploit cannot be separated. The installer is **`RD03v2`-only**:
 it does not apply to any other affected model code, and OpenWrt support across the rest
 of the range is model-specific — see [Mitigations for owners](mitigations.md) §4 and

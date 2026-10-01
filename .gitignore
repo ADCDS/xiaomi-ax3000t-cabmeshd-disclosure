@@ -1,2 +1,4 @@
 __pycache__/
 *.pyc
+evidence/cross-model/results.generated.tsv
+evidence/cross-model/results.generated.log

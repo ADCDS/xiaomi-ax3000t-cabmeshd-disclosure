@@ -66,10 +66,12 @@ Worth stating plainly, because these are the intuitive moves:
 1. **Know who is on your network.** A client that can reach the CAP listener can
    obtain web-admin access. The demonstrated CAP root path additionally requires a
    gate-open mode; the factory RE/WAN root path has separate prerequisites described
-   above. See [`CORRECTIONS.md`](CORRECTIONS.md). Remove unknown clients.
+   above. See [`v2-root-rce.md`](v2-root-rce.md). Remove unknown clients.
 2. **Keep guest isolation enabled and verify it.** Stock RD03v2 guest Wi-Fi uses
    a separate bridge whose firewall rejects port 19553; a custom bridge or
-   firewall rule could change that. Do not put untrusted clients on the main LAN.
+   firewall rule could change that. This boundary is established from the shipped
+   stock firewall rules; guest reachability was not tested live. Do not put
+   untrusted clients on the main LAN.
 3. **Use a strong WPA2/WPA3 key and do not share it.** This does not stop the
    exploit, but it is what keeps the attacker off the LAN in the first place.
 4. **Do not deploy this router where untrusted clients share its main L2 segment** —
@@ -86,7 +88,7 @@ Worth stating plainly, because these are the intuitive moves:
 exists.** This is model-specific, and it is the one thing that removes the mesh daemon
 entirely rather than merely containing it.
 
-- **Xiaomi AX3000T (`RD03v2`) — over the air.** The exploit chain in this repository
+- **Xiaomi AX3000T (`RD03v2`) — over the air.** The exploit code in this repository
   exists so that owners of this model can install OpenWrt without opening the case or
   attaching UART:
 
@@ -129,14 +131,16 @@ evidence of absence.
 **`NETMODE=whc_cap` is not a compromise indicator.** The router's
 `api/xqnetwork/get_netmode` API reports it as `4`, but normal setup can produce
 that value without an exploit. It only tells you that the demonstrated CAP
-root path is gated in the current state.
+root path is gated in the current state. The shell also gates the sink when
+`NETMODE=lanapmode` and `CAP_MODE=ap`.
 
 **Other indicators worth checking:**
 - SSH or telnet unexpectedly enabled.
 - Admin password changed, or a logged-in session you do not recognise.
 - Port-forwarding or DMZ rules you did not create.
 - Unexplained reboots, or Wi-Fi configuration that changed on its own (the exploit
-  rewrites wireless UCI keys as part of the chain and repairs them afterwards — an
+  rewrites wireless UCI keys during the V1-assisted OTA delivery and repairs them
+  afterwards — an
   interrupted run can leave the radios misconfigured).
 - Unknown clients in the device list.
 

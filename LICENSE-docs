@@ -7,8 +7,8 @@ Covered files:
 
   README.md
   ADVISORY.md
-  chain1-admin-takeover.md
-  chain2-root-rce.md
+  v1-admin-takeover.md
+  v2-root-rce.md
   technical-appendix.md
   secondary-findings.md
   remediation.md
@@ -17,6 +17,7 @@ Covered files:
   evidence/hardware-validation.md
   evidence/independent-validation.md
   evidence/cross-model/README.md
+  evidence/cross-model/sources.tsv
   evidence/cross-model/results.tsv
 
 You are free to share (copy and redistribute the material in any medium or

@@ -1,7 +1,7 @@
 # Secondary findings
 
-The two primary findings are V1 (admin takeover, `chain1-admin-takeover.md`) and V2
-(root RCE, `chain2-root-rce.md`). These are the lesser items.
+The two primary findings are V1 (admin takeover, `v1-admin-takeover.md`) and V2
+(root RCE, `v2-root-rce.md`). These are the lesser items.
 
 ---
 
