@@ -98,7 +98,7 @@ entirely rather than merely containing it.
   exists so that owners of this model can install OpenWrt without opening the case or
   attaching UART:
 
-  > [`ADCDS/ax3000t-ota-install`](https://github.com/ADCDS/ax3000t-ota-install) —
+  > [`ADCDS/xiaomi-ota-install`](https://github.com/ADCDS/xiaomi-ota-install) —
   > installer, and the OpenWrt images for `RD03v2`.
 
   Read [`NOTICE`](NOTICE) first. Two things to know before you start: the install is

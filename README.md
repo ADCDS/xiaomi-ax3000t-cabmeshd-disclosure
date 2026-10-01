@@ -229,7 +229,7 @@ the installer and the exploit cannot be separated. The installer is **`RD03v2`-o
 it does not apply to any other affected model code, and OpenWrt support across the rest
 of the range is model-specific — see [Mitigations for owners](mitigations.md) §4 and
 [`evidence/cross-model/`](evidence/cross-model/). The installer itself is
-[`ADCDS/ax3000t-ota-install`](https://github.com/ADCDS/ax3000t-ota-install).
+[`ADCDS/xiaomi-ota-install`](https://github.com/ADCDS/xiaomi-ota-install).
 
 All testing was performed by the reporter on devices purchased for this purpose. No
 third-party or production systems were involved.
