@@ -1,28 +1,21 @@
 # V2 — root command injection in mesh initialization
 
-V2 is one vulnerability: attacker-controlled mesh initialization data reaches
-`mimesh_init.sh`'s root shell `eval`. It is not one exploit sequence. This
-repository demonstrates **two V2-only routes** and **one combined V1 → V2 route**.
-V1 remains the separate admin-verifier disclosure documented in
-[`v1-admin-takeover.md`](v1-admin-takeover.md).
+V2 is one root `eval` vulnerability with three exploit routes. Which route works
+depends on the router's setup state.
 
-## Exploit routes at a glance
+## Required router state
 
-| Exploit route | Relationship | Required target state | Attacker position | Input source | Validation |
-|---|---|---|---|---|---|
-| **Direct V2 RE/WAN** (`re_wan_rce.py`) | V2 only; no V1, admin session, or `init_router.py` | Factory state (`INITTED!=YES`); selected WAN has DHCP/gateway state; rogue CAP wins discovery | WAN-side L2 | Raw type-6 `bh_ssid` / `bh_pswd` | Hardware: direct `uid=0(root)` callback |
-| **Combined V1 → V2 CAP/UCI** (`ota_rce.py`) | V1 supplies the admin session used for the UCI plant; V2 supplies root execution | Deliberately prepared CAP: `INITTED=YES`, `get_netmode=0`, UCI `NETMODE` unset | Main LAN / Wi-Fi | Wi-Fi `encryption` UCI values | Hardware: root callback and interactive shell |
-| **Direct V2 CAP/LAN** (`rce_poc.py`) | V2 only; constrained short-command primitive | Reachable initialized CAP in the same tested gate-open state | Main LAN / Wi-Fi | Type-4 `body[0x90]` plant | Hardware: `id` evaluated as `uid=0(root)`; about four command characters |
+| Route | Exact required state | Needs V1? | Normal web setup |
+|---|---|---:|---|
+| **Direct V2 RE/WAN** | Router is factory-reset and still uninitialized (`inited=0`). The selected WAN port must receive DHCP/gateway state so `cab_meshd -C` starts. Do **not** run `init_router.py`. | No | **Unavailable after setup** |
+| **Combined V1 → V2 CAP/UCI** | Factory-reset the router, then run `poc/init_router.py --host 192.168.31.1 --reboot`. Verify `inited=1`, API `get_netmode=0`, UCI `NETMODE` unset, and TCP/19553 open. | Yes, unless admin is already available | **Blocked by `NETMODE=whc_cap`** |
+| **Direct V2 CAP/LAN** | Factory-reset the router, then run the same `init_router.py --reboot` preparation. Verify `inited=1`, API `get_netmode=0`, UCI `NETMODE` unset, and TCP/19553 open. | No | **Blocked by `NETMODE=whc_cap`** |
 
-**CVSS 3.1: 8.8 High — `AV:A/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H`**. All
-three routes are hardware-confirmed, across two distinct adjacent device states.
-Their prerequisites must not be merged.
-
-The combined route uses two separate `cab_meshd` connections. V1 stops after
-reading the CAP's type-6 sync and mints an admin `stok`; after the API plant, V2
-opens a new connection and sends the tested trigger. V1 is a dependency of that
-exploit construction, not a dependency of the V2 vulnerability or either direct
-route.
+The stock web wizard is not equivalent to `init_router.py`. On the tested physical
+RD03v2 it produced `inited=1`, API `get_netmode=4`
+(`NETMODE=whc_cap`), and `cab_meshd -S -i br-lan`. V1 remained exploitable, but
+neither CAP-side V2 route reached the root `eval`, and the factory RE/WAN route was
+no longer running.
 
 ## Vulnerability: unsafe root `eval`
 
@@ -51,6 +44,9 @@ reaches this common sink.
 ## V2-only exploit routes
 
 ### Direct V2 RE/WAN — type-6 exploit
+
+> **Required state:** factory-reset and uninitialized (`inited=0`). Running
+> `init_router.py` or completing the web wizard removes this route.
 
 This is the simplest confirmed root path for a factory-reset device. It requires
 neither V1 nor `init_router.py`; the router initiates the connection.
@@ -140,6 +136,10 @@ reconnect while the router remains uninitialized.
 
 ### Direct V2 CAP/LAN — type-4 short-command primitive
 
+> **Required state:** factory-reset first, then run `init_router.py --reboot`.
+> This deliberately creates the tested gate-open CAP state. A normally configured
+> `NETMODE=whc_cap` router does not satisfy this prerequisite.
+
 This path reaches the CAP sink without V1 or an admin API plant, but its payload is
 very small.
 
@@ -206,6 +206,10 @@ completed `cap_init` set `NETMODE=whc_cap`, matching the physical one-shot resul
 PoC: `poc/rce_poc.py`.
 
 ## Combined exploit: V1 → V2 through CAP/UCI
+
+> **Required state:** factory-reset first, then run `init_router.py --reboot`.
+> This deliberately creates the tested gate-open CAP state. A normally configured
+> `NETMODE=whc_cap` router does not satisfy this prerequisite.
 
 This is the full-payload, over-Wi-Fi path implemented by `poc/ota_rce.py` and
 confirmed on physical RD03v2 hardware.
@@ -294,9 +298,10 @@ Detailed output is in `evidence/hardware-validation.md`.
   state; `id` was evaluated as `uid=0(root)`. Emulation independently created a
   root-owned marker through the same daemon path.
 
-The combined CAP/UCI result does not establish reachability after Xiaomi's normal
-wizard sets `whc_cap`. The RE/WAN result applies only to the separate factory/WAN
-state.
+On physical RD03v2 hardware, normal web setup left V1 reachable but disabled every
+demonstrated V2 root route: both CAP routes were blocked by `NETMODE=whc_cap`, and
+Direct RE/WAN was unavailable because the initialized router ran `cab_meshd -S`
+rather than the factory `cab_meshd -C` client.
 
 ## Fix
 
