@@ -223,13 +223,13 @@ would leave owners of unpatched devices with nothing they can act on — the opp
 of the point.
 
 **Why the PoC ships with the advisory.** The objective is to let owners of the
-analysed model — the **Xiaomi AX3000T (`RD03v2`)** — install OpenWrt **over the air**,
-without opening the case or attaching UART. That capability depends on the exploit code, so
+analysed model — the **Xiaomi AX3000T (`RD03v2`)** — install OpenWrt over Ethernet
+or Wi-Fi without opening the case or attaching UART. That capability depends on the exploit code, so
 the installer and the exploit cannot be separated. The installer is **`RD03v2`-only**:
 it does not apply to any other affected model code, and OpenWrt support across the rest
 of the range is model-specific — see [Mitigations for owners](mitigations.md) §4 and
 [`evidence/cross-model/`](evidence/cross-model/). The installer itself is
-[`ADCDS/xiaomi-ota-install`](https://github.com/ADCDS/xiaomi-ota-install).
+[`ADCDS/xiaomi-router-install`](https://github.com/ADCDS/xiaomi-router-install).
 
 All testing was performed by the reporter on devices purchased for this purpose. No
 third-party or production systems were involved.

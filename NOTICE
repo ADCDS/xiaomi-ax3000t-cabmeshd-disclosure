@@ -65,7 +65,7 @@ from the use of this software or documentation.
 
 6. Flashing OpenWrt voids your warranty and is not reversible trivially
 ----------------------------------------------------------------------
-Following the installer path in `xiaomi-ota-install` replaces the vendor
+Following the installer path in `xiaomi-router-install` replaces the vendor
 firmware. That installer targets the Xiaomi AX3000T (`RD03v2`) only and does
 not apply to the other affected model codes. Reverting requires an initramfs
 pivot over the network or U-Boot TFTP recovery with a signed stock image.

@@ -94,11 +94,11 @@ Worth stating plainly, because these are the intuitive moves:
 exists.** This is model-specific, and it is the one thing that removes the mesh daemon
 entirely rather than merely containing it.
 
-- **Xiaomi AX3000T (`RD03v2`) — over the air.** The exploit code in this repository
+- **Xiaomi AX3000T (`RD03v2`) — over Ethernet or Wi-Fi.** The exploit code in this repository
   exists so that owners of this model can install OpenWrt without opening the case or
   attaching UART:
 
-  > [`ADCDS/xiaomi-ota-install`](https://github.com/ADCDS/xiaomi-ota-install) —
+  > [`ADCDS/xiaomi-router-install`](https://github.com/ADCDS/xiaomi-router-install) —
   > installer, and the OpenWrt images for `RD03v2`.
 
   Read [`NOTICE`](NOTICE) first. Two things to know before you start: the install is
