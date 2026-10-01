@@ -17,8 +17,9 @@ inside the mesh config-sync message.
 
 - Network reach to TCP 19553 on `br-lan` (wired LAN or main Wi-Fi).
 - The device is initialised (`INITTED=YES`) and running as a mesh CAP (`-S`), the
-  normal state of a deployed router. Port 19553 is closed until then; on a factory
-  unit the owner's first setup opens it.
+  normal state of a deployed router. The inbound CAP TCP listener on `br-lan` is
+  absent until then; on a factory unit the owner's first setup opens it. The
+  separate factory RE path uses WAN-side discovery and an outbound connection.
 
 No router-admin password or client certificate is needed after network access.
 The `NETMODE=whc_cap` shell guard applies to V2's CAP root sink, not to this
@@ -77,9 +78,10 @@ into the LAN behind it.
 **Note on "root".** Admin is not, by itself, a uid-0 shell on this firmware. The
 telnet-enable endpoints (`get_telnet`/`set_telnet`) are removed in 2.0.x (confirmed
 live: "No page is registered"), and an independent audit found no authenticated
-web endpoint that reaches a root shell (see `secondary-findings.md`). So this
-finding is scoped precisely as **unauthenticated → full admin**, rated High; it
-does not establish an admin → root path.
+web request that directly executes a root command (see `secondary-findings.md`).
+The separate V1-assisted V2 delivery uses an admin API only to store payload data,
+then a mesh `cap_init` trigger reaches V2's root `eval`. V1 by itself is scoped as
+**unauthenticated → full admin**, rated High; it does not establish a uid-0 shell.
 
 ## Proof on physical hardware
 

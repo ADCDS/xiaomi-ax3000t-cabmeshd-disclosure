@@ -106,10 +106,15 @@ The enabling design flaws:
 
 ## V2 — unauthenticated root RCE (confirmed on hardware)
 
-The same `eval` sink that V1's handshake reaches also accepts attacker-controlled
-Wi-Fi configuration values planted via the admin API. In the V1-assisted path,
-V1 supplies the admin session used to plant a full-length payload, producing an
-**over-the-air root RCE** with an interactive root shell. This was
+The implemented CAP-side V2 PoC repeats the forgeable mesh authentication and
+state progression that V1 uses, but V1 never reaches the root `eval`. V1 stops
+after receiving the CAP's type-6 config sync and uses the leaked verifier to mint
+an admin session. In the V1-assisted V2 path, that session plants full-length
+Wi-Fi configuration payloads; a separate, tested `type-4→5→7` exchange invokes
+`cap_init` and carries those values into `mimesh_init.sh:717`'s `eval`. The type-7
+handler itself does not require `ST_RUNNING`; the PoC retains the full validated
+exchange. This produces an
+**over-the-air root RCE** with an interactive root shell and was
 **confirmed end-to-end on physical RD03v2 hardware after the minimal
 `init_router.py` setup left `NETMODE` unset**. The normal Xiaomi setup path can
 set `whc_cap`, which gates this sink; a non-reset bypass from that state has not
@@ -118,8 +123,9 @@ been demonstrated.
 Separately, a factory-reset RD03v2 starts `cab_meshd -C` after runtime port
 assignment gives the DHCP WAN a nonempty interface name. A rogue CAP on that WAN
 L2 segment can answer discovery, authenticate with the firmware-global `x` key,
-and deliver a type-6 `re_init` payload that reaches the same root `eval`. This
-direct path needs no V1, web login, admin API call, or prior initialization.
+and deliver a type-6 `re_init` payload. Although it enters through `re_init`
+rather than `cap_init`, it converges on the same V2 root `eval`. This direct path
+needs no V1, web login, admin API call, or prior initialization.
 
 ### V1-assisted OTA CAP delivery
 
@@ -132,10 +138,12 @@ configured router.
 
 1. V1 leaks `web_passwd256` over Wi-Fi → mints an admin `stok`.
 2. Admin API (`set_wifi_without_restart`) plants command-injection payloads into the
-   `encryption` UCI keys for the 2.4 GHz and 5 GHz bands. These fields are **exempt**
-   from `hackCheck` (the web input sanitizer that blocks `` ;|$& ``), so arbitrary
-   shell metacharacters pass through. The plant preserves the SSID and does not
-   restart the radios; the later trigger briefly drops Wi-Fi during reconfiguration.
+   `encryption` UCI keys for the 2.4 GHz and 5 GHz bands. `encryption` does pass
+   through `hackCheck`; the working payload avoids its blocked bytes
+   (backtick, ``;|$&`` and newline) and instead uses permitted `\"`, spaces, and
+   `#`. Hardware read-back confirmed both values were stored verbatim. The plant
+   preserves the SSID and does not restart the radios; the later trigger briefly
+   drops Wi-Fi during reconfiguration.
 3. A `type-4→5→7` trigger fires `cap_init`. Inside `do_cap_init`,
    `mgmt_2g=$(uci get wireless.<iface>.encryption)` reads the poisoned value
    **raw** (not base64-laundered) and passes it into `mimesh_init.sh:717`'s `eval`.
@@ -143,8 +151,9 @@ configured router.
    `parse_json` quoting via `\"`→`"` un-escaping. `eval` becomes
    `mgmt_2g="" wget … #"…` — the shell assignment-prefix trick runs `wget` as root.
    The 5 GHz band carries `\" sh /tmp/x #`, executing the downloaded stager.
-5. The stager calls back (`uid=0`), restores valid `psk2` encryption, and opens a
-   persistent reconnecting reverse shell. The AP briefly drops, then returns with
+5. The stager calls back (`uid=0`), restores valid `psk2` encryption, and starts a
+   background reconnecting reverse shell. It survives the radio reconfiguration,
+   but no boot persistence is installed. The AP briefly drops, then returns with
    the repaired WPA2 configuration.
 
 - **No small field-specific payload cap was found** for `encryption`; ordinary

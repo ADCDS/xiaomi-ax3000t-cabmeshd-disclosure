@@ -11,9 +11,12 @@ Why this exists
     elif [ "$INITTED" = "YES" ]; then
         procd_set_param command "$PROG" -S -i br-lan
 
-Out of the box `init_info` reports `"inited":0`, so TCP/UDP 19553 never opens and
-the mesh attack surface is unreachable. This script flips that bit through the
-device's own web API, using only what is recoverable from the firmware image.
+Out of the box `init_info` reports `"inited":0`, so the inbound CAP listener on
+`br-lan` is absent. The factory router can instead run `cab_meshd -C` on its WAN
+interface, broadcast UDP/19553 discovery, and connect outbound to a CAP; this
+helper does not prepare or use that RE/WAN path. It flips the initialization bit
+through the device's own web API, using only what is recoverable from the firmware
+image.
 It is **not** equivalent to the normal Xiaomi web wizard: that wizard can call
 `mesh_connect.sh init_cap 2` and set `NETMODE=whc_cap`, closing the CAP root sink.
 This helper leaves `NETMODE` unset while opening the CAP listener.
@@ -285,7 +288,7 @@ def main():
 
     info = read_init_info(host)
     if info.get("inited") == 1:
-        log("[!] already initialised; INITTED is set. If 19553 is closed, reboot")
+        log("[!] already initialised; INITTED is set. If inbound CAP TCP/19553 is closed, reboot")
         log("    or check NETMODE.")
         if args.reboot:
             pass  # fall through: we still need a stok to reboot

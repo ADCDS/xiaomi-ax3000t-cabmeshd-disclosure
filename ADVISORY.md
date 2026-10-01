@@ -68,7 +68,7 @@ and raw UCI input were additionally checked in two samples: `RD05` (Wi-Fi 5, at
 the corresponding `2.0.28` paths (`:717` / `:1007`). The 28-model binary sweep
 checks `cab_meshd` and the shared HMAC key; it does **not** inspect every model's
 shell scripts. Even for the two script samples, the admin API's `hackCheck`
-exemptions and `parse_json` behavior were not verified end-to-end. The V2
+character filtering and `parse_json` behavior were not verified end-to-end. The V2
 sink/input-path claim therefore applies to these sampled firmwares, while complete
 V2 delivery is demonstrated only on `RD03v2` `2.0.28`.
 
@@ -111,13 +111,16 @@ logs the attacker in as `admin`.
   [`evidence/independent-validation.md`](evidence/independent-validation.md).
 
 ### V2 — unauthenticated OS command execution as root
-The `cap_init`/`re_init` handlers drive a root shell `eval` with attacker-controlled input. In
-the **V1-assisted OTA CAP delivery**, the admin session minted by V1 plants a
-command-injection payload into Wi-Fi `encryption` UCI keys (exempt from the web input
-sanitizer `hackCheck`); a `type-7` trigger then fires `cap_init`, whose
+The `cap_init`/`re_init` handlers drive a root shell `eval` with attacker-controlled
+input. V1 itself stops after receiving the type-6 config sync and never reaches
+this sink. In the **V1-assisted OTA CAP delivery**, the admin session minted by V1 plants a
+command-injection payload into Wi-Fi `encryption` UCI keys. The payload passes the
+web input sanitizer `hackCheck` by avoiding its blocked bytes and using permitted
+`\"`, spaces, and `#`; a `type-7` trigger (whose C handler has no connection-state
+check) then fires `cap_init`, whose
 `mimesh_init.sh:717` `eval` executes the raw `encryption` value as root. The direct
 injection variants (base64-laundered via the type-4 plant or RE builder) also reach
-the same sink. The physical OTA test used `poc/init_router.py` as laboratory
+the same V2 sink. The physical OTA test used `poc/init_router.py` as laboratory
 preparation to initialize stock while leaving `NETMODE` unset; this was not an
 attacker capability demonstrated against a normally configured router. The normal web wizard can set
 `NETMODE=whc_cap`; `do_cap_init` skips this sink in that mode. We have not
@@ -229,9 +232,11 @@ mesh-related CVEs Xiaomi has published. Per Xiaomi's own advisory text both are
 
 Two clarifications to pre-empt, since both cut against a naive reading:
 
-- **`meshd` and `cab_meshd` are different binaries.** They ship separate init scripts
-  with mutually exclusive start conditions — `meshd` runs only when
-  `INITTED != "YES"`, `cab_meshd`'s CAP server only when `INITTED == "YES"`.
+- **`meshd` and `cab_meshd` are different binaries.** They ship separate init
+  scripts and implement different roles. `meshd` runs while `INITTED != "YES"`;
+  `cab_meshd`'s CAP server runs when `INITTED == "YES"`, while its RE client can
+  also run in the uninitialized state once the DHCP WAN interface is populated.
+  The two binaries can therefore coexist during factory RE operation.
   CVE-2020-14109 is not this daemon.
 - **NVD scores CVE-2020-14119 as `PR:N` / 9.8**, contradicting Xiaomi's own
   post-auth description. A reviewer working from NVD alone will see an existing
@@ -259,8 +264,9 @@ modules all call `web_login()` and derive a `stok` first. Those web-API exploits
 closed on 2.0.x by `hackCheck` v3
 (`XQSecureUtil.filterChars = "[=[\n[`;|$&\n]]=]"`) — a **Lua web-API** filter. A
 native C daemon on its own socket was never in its scope, which is why `cab_meshd`
-came through that hardening pass untouched. V2 compounds this: the `encryption` UCI
-field it injects into is *exempt* from the same sanitizer.
+came through that hardening pass untouched. The V2 OTA payload also fits around
+that filter: `encryption` is filtered, but `\"`, spaces, and `#` remain permitted
+and are sufficient to break out at the later shell `eval`.
 
 **Closest analogue in another vendor's product.** `SYSS-2025-002` /
 `CVE-2026-27846` (Christian Zäske, 2026-02-12) describes missing authentication in
@@ -313,8 +319,9 @@ assigned and published a CVE for exactly this weakness class in its router line.
 ## Remediation
 See `remediation.md`. In brief: replace the firmware-global key with a
 per-device/enrollment secret and require client-cert TLS; stop shipping
-`web_passwd256` to peers; quote `$@` and never `base64 -d`→`eval` peer data; and
-salt/rework the root credential.
+`web_passwd256` to peers; quote `$@`, remove the root `eval`, and validate both
+UCI-derived management values and decoded peer fields; and salt/rework the root
+credential.
 
 ## Disclosure timeline
 

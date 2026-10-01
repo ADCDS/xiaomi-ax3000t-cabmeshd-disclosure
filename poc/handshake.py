@@ -6,13 +6,16 @@ call, reading each reply and responding in-protocol, with a distinctive marker i
 every attacker-influenced field so the resulting argv (captured by the emulator
 shim over mesh_connect.sh) reveals exactly which positionals we control.
 
-State machine (enum at 0x386, transitions from the binary):
+Driver sequence (enum at 0x386, transitions from the binary):
   ST_SSL_DONE(3) --recv type4 auth_req-->  verify(q-key) --> ST_AUTH_SENT(4)
      CAP also sends: type5 auth_reply + type4 its-own auth_req
   ST_AUTH_SENT(4) --recv type5 auth_reply[body0==1]--> change_state(6)=ST_RUNNING
      then send_sync_req(0x5420): CAP sends its config as type6
-  ST_RUNNING(6)  --recv type7 sync_reply[body0==1]--> process_sync_reply(0x63e0)
+  driver then sends type7 sync_reply[body0==1] --> process_sync_reply(0x63e0)
      --> cap_init builder(0xa3bc) --> system("mesh_connect.sh cap_init ...")
+
+The type7 handler itself does not compare the connection state; this driver uses
+the full 4->5->7 exchange so it can inspect ST_RUNNING and the type6 sync first.
 
 Header (44B, big-endian; body then read into the same buffer):
   [0:2]=version 0x1001  [2:4]=body len  [4:6]=type

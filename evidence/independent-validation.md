@@ -74,41 +74,45 @@ authenticating *to* a CAP (the server verifies an incoming peer with `'q'`).
 2. **The role-byte derivation is correct.** Only the `'q'` variant matches; `'x'` and
    the unmodified literal do not. This confirms the `r0 = 1 - mode` byte-select at
    `0x499c`/`0x3c0c`.
-3. **The wire format and state machine are correct**, independently of the
-   reverse-engineering that produced them.
-4. **The pre-auth entry is real and was exercised in the wild.** The 2023 script
-   opens TLS with `CERT_NONE` and immediately sends type-4 — the `ST_SSL_DONE`
-   acceptance described in §4 — and it worked against a stock router.
+3. **The wire format and observed CAP exchange sequence are correct**, independently
+   of the reverse-engineering that produced them. The capture does not by itself
+   prove every internal state check.
+4. **The pre-auth entry is real and was exercised on physical stock hardware.** The
+   2023 script opens TLS with `CERT_NONE` and immediately sends type-4 — the
+   `ST_SSL_DONE` acceptance described in §4 — and it worked against a stock router.
 
 This forecloses the objection that the key and protocol are speculative products of
 static analysis.
 
-## The credential has been on screen since 2023
+## The credential has been retrievable since 2023
 
-Traced against §5, the 2023 script performs the V1 handshake in full:
+Traced against §5, the 2023 script performs every step needed for V1, then sends
+an additional type-7 reconfiguration reply:
 
 | §5 step | 2023 script |
 |---|---|
 | send type-4 (forged constant-key auth) | `hex_string` |
 | recv type-5 + type-4 | `response1`, `response2` |
 | send type-5, `body[0]=1` | `hex_string2` |
-| **recv type-6 — the CAP's sync config, containing `web_passwd256`** | **`response3`, which the script `print`s** |
-| send type-7, `body[0]=1` (fires `cap_init`) | `hex_string3` |
+| **recv type-6 — the CAP's sync config, containing `web_passwd256`; V1 is complete here** | **`response3`, which the script `print`s** |
+| post-V1: send type-7, `body[0]=1` (fires `cap_init`) | `hex_string3` |
 
-`response3` is the type-6 sync message. **Every person who has run that script, or
-`xmir-patcher`'s `connect4.py`, since March 2023 has had the target router's
-web-admin login verifier printed to their terminal.** It was not recognised as a
-credential — the author was after `netmode4`, and the value scrolled past as noise.
+`response3` is the type-6 sync message. **The original gist prints the target
+router's web-admin login verifier to the terminal.** `xmir-patcher`'s
+`connect4.py` exercises the same exchange and receives the type-6 data into its
+`resp` variable, but does not print it. The original author was after `netmode4`
+and did not identify the field as a credential.
 
 V1 has therefore been unauthenticated, remotely reachable, and *observable with
 public working code* for over three years.
 
 ## Scope of this validation — what it does not show
 
-- It validates §2 (key), §3 (wire format), §4 (pre-auth type-4 acceptance) and the
-  §5 handshake. It says nothing about **V2**, the `cap_init` → `eval` sink, which
-  rests on the hardware confirmation in
-  [`hardware-validation.md`](hardware-validation.md).
+- It validates §2 (key), §3 (wire format), §4 (pre-auth type-4 acceptance), every
+  step needed for V1, and the public `4→5→7` sequence that reaches `cap_init`.
+  It does **not** validate V2 command injection: the capture supplies no malicious
+  sink input and proves neither `eval` execution nor a root result. That evidence
+  is in [`hardware-validation.md`](hardware-validation.md).
 - The `pass` value above is **not** a secret: it is a function of the (public) key
   and the `id` in the same frame, and is reproduced here only to demonstrate the
   derivation. No credential belonging to the 2023 author is disclosed by it.

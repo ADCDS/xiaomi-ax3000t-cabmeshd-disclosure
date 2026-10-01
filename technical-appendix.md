@@ -1,7 +1,11 @@
 # Technical appendix — shared primitives
 
-The two primary findings, V1 and V2, enter through the
-same unauthenticated surface. This document specifies it once. All offsets are file offsets / virtual addresses in the shipped
+V1 and the implemented CAP-side V2 PoCs share the inbound listener and forgeable
+HMAC exchange. V1 stops after receiving the CAP's type-6 sync and never invokes
+the root `eval`. The CAP PoCs then use type-7, although its handler does not require
+`ST_RUNNING`. The factory RE/WAN path uses the same protocol and key with the peer
+roles and connection direction reversed, then receives type-6 into `re_init`. This
+document specifies those shared primitives once. All offsets are file offsets / virtual addresses in the shipped
 `/usr/sbin/cab_meshd` (32-bit ARM, little-endian) from `romversion 2.0.28`.
 
 ## 1. Transport: TLS with no client certificate
@@ -73,16 +77,21 @@ Enum (strings at `0x386…`):
 4 ST_AUTH_SENT   5 ST_AUTH_SENT_2   6 ST_RUNNING
 ```
 
-| Type | Handler | Requires state | Effect |
+| Type | Handler | Role / state requirement | Effect |
 |---|---|---|---|
-| 4 | `process_auth_req` `0x5f04` | 3 `ST_SSL_DONE` (i.e. right after TLS — **pre-auth**) | verifies `pass` (§2); plants `type-4 body[0x90]` (19 B) → `conn+0x10e` at `0x6058`; → `ST_AUTH_SENT` |
-| 5 | `process_auth_reply` `0x56ec` | 4 `ST_AUTH_SENT`, `body[0]==1` | `change_state(6)` → `ST_RUNNING`; CAP runs `send_sync_req` `0x5420` and pushes its config as a type-6 message |
-| 6 | `process_sync_req` | — | carries a config JSON |
-| 7 | `process_sync_reply` `0x63e0` | `ST_RUNNING`, `body[0]==1` | runs the `cap_init` builder `0xa3bc` → `snprintf` `0xa590` → `system()` `0xa598` |
+| 4 | `process_auth_req` `0x5f04` | CAP: 3 `ST_SSL_DONE`; RE: 5 `ST_AUTH_SENT_2` | verifies the role-specific `pass` (§2); CAP plants `body[0x90]` (19 B) → `conn+0x10e` at `0x6058` and enters state 4; RE enters state 6 `ST_RUNNING` |
+| 5 | `process_auth_reply` `0x56ec` | 4 `ST_AUTH_SENT`, `body[0]==1` | CAP enters state 6 and sends its config as type-6 via `send_sync_req` `0x5420`; RE enters state 5 and waits for the CAP's type-4 |
+| 6 | `process_sync_req` | RE/client role in state 6 `ST_RUNNING` (checked by helper `0x6130`) | parses the received config; the working RE/WAN path calls the `re_init` builder `0xa950` → `system()` `0xae94` |
+| 7 | `process_sync_reply` `0x63e0` | CAP/server role, `body[0]==1`; **no connection-state comparison** | runs the `cap_init` builder `0xa3bc` → `snprintf` `0xa590` → `system()` `0xa598` |
 
 **Type-4 is accepted in `ST_SSL_DONE` — immediately after the TLS handshake, before
 any authentication.** That is what makes the V1 exchange pre-auth: the only gate is
 the §2 HMAC, whose key is public knowledge (it is in the firmware).
+
+**Type-7 is even less gated than the PoC sequence suggests.** The current CAP PoCs
+send `4→5→7`, but `process_sync_reply` does not test `conn+0xe0` for
+`ST_RUNNING` or validate an HMAC. The later shell `NETMODE` gate still controls
+whether `do_cap_init` reaches `mimesh_init`.
 
 ## 5. Minimal handshake to `ST_RUNNING`
 
@@ -114,10 +123,20 @@ rogue CAP sends type-6 -> re_init builder -> root shell sink
 /usr/sbin/mesh_connect.sh cap_init '%s' '%s' '%s' '%s' '%s' '%s' '%s' %d
 ```
 
-Built at `0xa3bc`; the seven `%s` are checked by `check_injection` (`0x9308`,
-blacklist at `0xe2c9`) at `0xa4f8` before `snprintf`. Two of the `%s` are
-`base64`-encodings the daemon computes from wire data (encoder `0x2bf8`), which is
-the laundering channel the V2 sink abuses.
+Built at `0xa3bc`; the seven `%s` are checked by `check_injection` (`0x9308`) at
+`0xa4f8` before `snprintf`. Its exact 18-byte blacklist is:
+
+```text
+@`$#,;'\"[]&*()|<>
+```
+
+Space and the base64 alphabet are not included. The working direct CAP/LAN path
+uses the first `%s`, sourced from the type-4 plant at `conn+0x10e`: the attacker
+places a five-word pad followed by an already-base64-encoded shell expression there.
+The check sees only permitted pad/base64 characters; unquoted `$@` later makes the
+token `do_cap_init` `$6`, which is decoded before `eval`. The builder also computes
+base64 for two later `%s` values, but those are not the payload channel used by the
+working CAP/LAN PoC.
 
 ### RE `re_init` template
 
@@ -153,10 +172,14 @@ additional encoder headroom.
 2. **TLS server accepts any client** (`SSL_VERIFY_NONE`) (§1).
 3. **Secret material (admin hash) shipped to peers** in the sync config (§7) →
    **V1**, the confirmed admin takeover.
-4. **`base64`-launderable C blacklist** feeding a shell consumer that
-   **re-splits + `base64 -d` → `eval`** (§6) → **V2**, confirmed remote root RCE. The
-   `type-7` handler requires `ST_RUNNING`, but has no C-level `NETMODE` or
-   device-mode gate; the later shell gate
+4. **Attacker-controlled mesh initialization values are reparsed by a root
+   `eval`.** The V1-assisted CAP delivery supplies raw UCI `encryption` values;
+   direct CAP/LAN uses an attacker-preencoded type-4 plant, unquoted `$@` splitting,
+   and `base64 -d`; the RE/WAN builder base64-encodes raw type-6 fields before
+   `do_re_init` decodes them. These are V2 inputs; V1 itself ends at the type-6
+   verifier leak. The type-7 handler is limited to CAP/server role and
+   `body[0] == 1`, but has no connection-state, HMAC, or `NETMODE` check; the
+   later shell gate
    (`NETMODE=whc_cap`, or `NETMODE=lanapmode` with `CAP_MODE=ap`) can block the
    CAP/LAN path before the sink. The factory RE/WAN path reaches
    `re_init` without that gate and is confirmed on hardware. See

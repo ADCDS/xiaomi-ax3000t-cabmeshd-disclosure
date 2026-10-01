@@ -3,7 +3,7 @@
 
 Runs a shell command as root on a Xiaomi AX3000T (RD03v2, stock 2.0.28) CAP over
 TCP 19553 with no credentials. Confirmed end-to-end in emulation on the stock
-binary + shell scripts: the daemon-driven 4->5->7 handshake below drove the
+binary + shell scripts: the tested daemon-driven 4->5->7 exchange below drove the
 mimesh_init eval and created a root-owned file.
 
 Delivery: the base64'd command must go in the TYPE-4 PLANT field,
@@ -23,8 +23,10 @@ Constraints (CAP/LAN path):
     shell skips the sink for NETMODE=whc_cap, and for NETMODE=lanapmode together
     with CAP_MODE=ap. A completed cap_init can close the sink. Treat the trigger
     as potentially one-shot and check the mode before using it.
-  * The C blacklist (check_injection, 0xe2c9) is bypassed structurally: cab_meshd
-    base64-encodes the field before checking, so the blacklist only sees base64.
+  * The C blacklist (check_injection, 0xe2c9) is bypassed structurally: the attacker
+    puts only the permitted positional pad and pre-encoded base64 in the plant.
+    do_cap_init restores the blocked shell characters later with base64 -d;
+    cab_meshd does not perform the encoding for this CAP/LAN plant.
 
 Usage:
     ./rce_poc.py --host 192.168.31.1 --cmd 'id'      # ~4-char budget: id, >W, etc.

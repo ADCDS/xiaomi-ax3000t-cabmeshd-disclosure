@@ -57,11 +57,13 @@ as shared-code risk.**
 
 ## Note on scope of the negative results
 
-An independent static audit of the LuCI web layer found **no** reachable
-authenticated admin→root command-injection on RD03v2 2.0.28: the DDNS second-order
-chain is closed (attacker fields are urlencoded / shell-quote-escaped / `tonumber`'d
-before the root `eval`; the only raw-substituted fields have no writer), config
-backup/restore is closed, `upgradeRom` is filtered, and all other shell sinks are
-format-constrained, base64, numeric, or filtered. So V1 (admin takeover) does **not**
-chain to a root shell through the web layer on this firmware; root command execution
-comes from V2 (the mesh path), not the web layer.
+An independent static audit of the LuCI web layer found no authenticated request
+that directly executes a root command on RD03v2 2.0.28: the DDNS second-order chain
+is closed (attacker fields are urlencoded / shell-quote-escaped / `tonumber`'d before
+the root `eval`; the only raw-substituted fields have no writer), config
+backup/restore is closed, `upgradeRom` is filtered, and the remaining direct shell
+sinks are format-constrained, base64, numeric, or filtered. The authenticated
+`set_wifi_without_restart` API is nevertheless the **storage leg** of the
+V1-assisted V2 delivery: it writes raw `encryption` values, then a separate
+`cab_meshd` type-7 trigger carries them into V2's root `eval`. V1 alone does not
+provide a uid-0 shell; the combined delivery uses the web API plant and mesh sink.

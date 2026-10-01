@@ -49,7 +49,8 @@ Worth stating plainly, because these are the intuitive moves:
 
 - **Changing the admin password.** V1 harvests the stored login *verifier* over the
   mesh protocol regardless of what the password is. A strong password does not stop
-  it, and after exploitation the password is known to the attacker anyway.
+  pass-the-hash login. The plaintext password is not revealed unless the unsalted
+  verifier is cracked.
 - **Disabling remote/web management or UPnP.** Neither closes the LAN CAP listener
   or the factory RE client's outbound mesh connection.
 - **Hiding the SSID or MAC filtering.** These do not protect a router from
@@ -78,8 +79,12 @@ Worth stating plainly, because these are the intuitive moves:
    shared housing, cafés, small business guest access, conference networks. If you
    need public Wi-Fi, serve it from a *different* device on a separate segment, not
    from this router.
-5. **If the unit is only an access point or a switch**, remember the daemon still
-   runs and still listens on `br-lan`. AP-only operation is not a mitigation.
+5. **Do not infer exposure from the words “access point” alone.** An initialized
+   unit used manually as an AP/switch, including some `lanapmode` states, can still
+   run the CAP listener on `br-lan`. The vendor's distinct `wifiapmode` makes the
+   init script exit, as do `whc_re` and `cpe_bridgemode`. Verify the actual
+   `NETMODE` and that port 19553 is closed instead of treating generic AP-only use
+   as a reliable mitigation.
 6. **Do factory setup only on a trusted upstream L2 segment.** Do not attach a
    reset unit's Ethernet port to a shared apartment, campus, hotel, or provider
    handoff where another subscriber can answer its mesh discovery broadcasts.

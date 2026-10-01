@@ -41,7 +41,7 @@ GET …/;stok=<stok>/api/misystem/router_info
 ```
 
 The PoC never sends the `type-7` trigger and does not alter persistent
-configuration. Logging in creates transient session and nonce/replay state.
+configuration. Logging in creates a web session and updates nonce/replay state.
 The forged-auth derivation was cross-checked against the daemon's own debug log,
 which prints the incoming peer's key (`q38d364d…`) and expected `pass`; the Python
 `base64(HMAC_SHA256("q38d364d…", id))` reproduces it exactly.
@@ -67,7 +67,7 @@ RD03v2 unit. The full sequence runs purely over Wi-Fi with no WAN cable.
    - Admin API `set_wifi_without_restart` plants injection payloads into the
      `encryption` UCI keys for wifiIndex 1 (2.4 GHz) and 2 (5 GHz). SSID preserved.
    - Read-back via `wifi_detail_all` confirms the payloads are stored verbatim.
-   - `rce_poc.py`-style `type-4→5→7` trigger fires `cap_init`.
+   - The tested `rce_poc.py`-style `type-4→5→7` exchange fires `cap_init`.
 3. Attacker's web server captures:
 
 ```
@@ -127,7 +127,8 @@ tcp        0      0 :::443                  :::*                    LISTEN      
 - **The `eval` sink is live and reachable** through the `mgmt_2g`/`mgmt_5g` →
   `encryption` UCI path on real stock firmware.
 - **The self-repair works**: after the expected Wi-Fi interruption, the AP returns
-  with valid encryption, the attacker reconnects, and the reverse shell persists.
+  with valid encryption, the attacker reconnects, and the process-lifetime reverse
+  shell loop reconnects. No boot persistence was installed.
 - **The full delivery is automated**: V1 admin takeover → V2 root RCE → interactive
   shell, all from a single script (`poc/ota_rce.py`).
 
@@ -226,7 +227,7 @@ PoC: `poc/re_wan_rce.py`.
 
 Under the qemu-user harness running the **real stock `cab_meshd` binary and shell
 scripts**, with a clean on-disk config (`NETMODE` unset), a client that completed the
-`4→5→7` handshake and placed `base64("`>W`")` in the type-4 **plant** (`body[0x90]`)
+tested `4→5→7` exchange and placed `base64("`>W`")` in the type-4 **plant** (`body[0x90]`)
 drove `mimesh_init.sh:717`'s `eval` to execute the redirect **as root**, creating
 `/W` (`root:root`). An `` `id` `` payload put `uid=0(root)…` in `bh_ssid`. This is
 arbitrary root command execution from an unauthenticated TCP client, through the full
@@ -264,7 +265,7 @@ have the physical-hardware evidence documented above.
 ## Footprint / cleanup
 
 V1 testing sends no `type-7` and changes no persistent configuration; it does
-create transient login/session state. The V2 OTA hardware test
+create a web session and update nonce/replay state. The V2 OTA hardware test
 involved multiple factory-reset + re-init cycles (all reversible; the unit is a
 disposable lab device purchased for this research). The OTA payload modifies the
 Wi-Fi `encryption` UCI keys and triggers a `cap_init` reconfiguration; the

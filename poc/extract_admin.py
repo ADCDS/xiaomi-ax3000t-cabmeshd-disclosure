@@ -18,7 +18,7 @@ No password is ever guessed or cracked -- the router hands over the verifier.
 
 This does not alter persistent configuration: the mesh half stops before the
 type-7 that would trigger cap_init, while the web half creates an admin session
-and advances transient nonce/replay state before reading authenticated data.
+and advances nonce/replay state before reading authenticated data.
 
 Usage:
     ./extract_admin.py --host 192.168.31.1

