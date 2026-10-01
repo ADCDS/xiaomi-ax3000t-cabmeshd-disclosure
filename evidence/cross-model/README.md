@@ -107,7 +107,7 @@ Static analysis of that image complements the physical results in
 ### OpenWrt is model-specific, not a line-wide escape
 
 The network-based OpenWrt installer shipped with this disclosure
-([`ADCDS/xiaomi-router-install`](https://github.com/ADCDS/xiaomi-router-install)) targets
+([`ADCDS/xiaomi-openwrt-install`](https://github.com/ADCDS/xiaomi-openwrt-install)) targets
 the analysed model, **`RD03v2`, only**. It does not run on the other 28 verified model
 codes and must not be read as a general remedy for the affected range.
 

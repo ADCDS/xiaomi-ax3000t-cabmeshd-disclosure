@@ -229,7 +229,7 @@ the installer and the exploit cannot be separated. The installer is **`RD03v2`-o
 it does not apply to any other affected model code, and OpenWrt support across the rest
 of the range is model-specific — see [Mitigations for owners](mitigations.md) §4 and
 [`evidence/cross-model/`](evidence/cross-model/). The installer itself is
-[`ADCDS/xiaomi-router-install`](https://github.com/ADCDS/xiaomi-router-install).
+[`ADCDS/xiaomi-openwrt-install`](https://github.com/ADCDS/xiaomi-openwrt-install).
 
 All testing was performed by the reporter on devices purchased for this purpose. No
 third-party or production systems were involved.

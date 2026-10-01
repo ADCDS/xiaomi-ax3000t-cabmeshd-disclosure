@@ -98,7 +98,7 @@ entirely rather than merely containing it.
   exists so that owners of this model can install OpenWrt without opening the case or
   attaching UART:
 
-  > [`ADCDS/xiaomi-router-install`](https://github.com/ADCDS/xiaomi-router-install) —
+  > [`ADCDS/xiaomi-openwrt-install`](https://github.com/ADCDS/xiaomi-openwrt-install) —
   > installer, and the OpenWrt images for `RD03v2`.
 
   Read [`NOTICE`](NOTICE) first. Two things to know before you start: the install is
