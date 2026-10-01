@@ -61,4 +61,6 @@ Fixing the shared faults closes the unauthenticated surface:
 - A `type-6` sync capture contains **no** `web_passwd*`.
 - `poc/extract_admin.py` fails to obtain a session.
 - `poc/rce_poc.py` sink payloads have no effect even via a direct `cap_init` call.
+- `poc/re_wan_rce.py` cannot authenticate as a CAP and produces no callback from a
+  factory-reset router on an isolated WAN segment.
 - `download_search` with a metacharacter `path` is rejected on all SKUs.

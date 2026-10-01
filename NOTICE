@@ -23,6 +23,12 @@ the device's Wi-Fi encryption configuration and triggers `cap_init` in the
 mesh daemon. It is not a read-only probe. The payload self-repairs the
 wireless configuration afterwards, but the device is left with modified state.
 
+`poc/re_wan_rce.py` can execute a command as root on a factory-reset RD03v2 from
+the WAN-side L2 segment. Its type-6 message completes `re_init`, which sets
+`INITTED=YES` and changes network and Wi-Fi configuration. The default payload only
+returns `id`, but the protocol action itself is state-changing. Factory-reset the
+test unit to restore the starting state.
+
 3. The mode gate can close
 --------------------------
 The demonstrated CAP command-injection sink is skipped when
@@ -31,6 +37,10 @@ web setup can set it too; it is not evidence that a prior exploit ran. Treat
 the trigger as potentially one-shot and do not fire it unless the setup state
 has been checked. `poc/ota_rce.py` refuses to plant or fire unless it confirms
 the gate-open mode used in the hardware test. See `CORRECTIONS.md`.
+
+The RE/WAN path does not use the CAP `NETMODE` gate. It is reachable only while
+the router is uninitialized, and a successful run closes itself by completing
+RE initialization.
 
 4. The hard-coded key is a firmware fact, not a secret of the author's
 ----------------------------------------------------------------------

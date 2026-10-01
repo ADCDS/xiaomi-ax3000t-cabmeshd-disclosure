@@ -16,6 +16,12 @@ Listener: TCP **and** UDP **19553**, bound to `br-lan` when the daemon runs as C
 (`cab_meshd -S -i br-lan`), started by `/etc/init.d/cab_meshd` when
 `xiaoqiang.common.INITTED == "YES"`.
 
+On a factory-reset RD03v2, boot-time port assignment populates the selected DHCP
+WAN as `eth1.4` before `START=99`; the same init script starts
+`cab_meshd -C -i eth1.4`. This RE broadcasts UDP discovery and initiates outbound
+TLS to the first CAP response. That startup path and the full connection were
+observed on hardware.
+
 ## 2. Authentication: a hard-coded, firmware-global HMAC key
 
 The "authentication" is an HMAC-SHA256 over the peer id, keyed by a **32-byte
@@ -28,7 +34,8 @@ string compiled into the binary** — identical on every RD03v2 of this firmware
   `r0 = 1 - mode` before the byte-select at `0x3c0c`. Consequently a **server
   (mode=1) verifies an incoming peer with the `'q'` variant** — key
   `q38d364d8ed3bd085e150211ea6b3715` — while `'x'` is what a CAP uses for the auth
-  it *sends*.
+  it *sends*. The inverse was confirmed live: a mode-0 RE accepted a rogue CAP's
+  token generated with `x38d364d8ed3bd085e150211ea6b3715`.
 - HMAC computed at `0x3b58`: `HMAC-SHA256(key, id)`, then base64-encoded.
 
 So a peer authenticates to a CAP with:
@@ -92,6 +99,17 @@ recv type-6:  the CAP's config JSON  <-- contains web_passwd256  (V1 stops here)
 send type-7:  body[0]=1              <-- triggers cap_init         (V2 sink)
 ```
 
+The factory RE/WAN direction reverses the peers:
+
+```
+RE broadcasts MIROUTE_RE_DDv1.0\0 over UDP/19553
+rogue CAP replies MIROUTE_CAP_DDv1.0 + CAP IP at offset 0x12
+RE opens TLS and sends type-4 using the q-key
+rogue CAP sends type-5 success + type-4 using the x-key
+RE sends type-5 success -> ST_RUNNING
+rogue CAP sends type-6 -> re_init builder -> root shell sink
+```
+
 ## 6. The `cap_init` `system()` template
 
 ```
@@ -102,6 +120,24 @@ Built at `0xa3bc`; the seven `%s` are checked by `check_injection` (`0x9308`,
 blacklist at `0xe2c9`) at `0xa4f8` before `snprintf`. Two of the `%s` are
 `base64`-encodings the daemon computes from wire data (encoder `0x2bf8`), which is
 the laundering channel the V2 sink abuses.
+
+### RE `re_init` template
+
+The RE type-6 handler calls builder `0xa950`, which produces:
+
+```
+/usr/sbin/mesh_connect.sh re_init '%s' '%s' '%s' '%s' '%s' '%s' '%s' '%s' '%s' %d
+```
+
+Raw body fields at `0xe6` and `0x107` are base64-encoded into the seventh and
+eighth string positions. Four earlier factory fields are empty; because
+`run_with_lock` later invokes unquoted `$@`, those empty words must be populated
+or the controlled values shift away from `do_re_init` `$7/$8`. With positions
+preserved, `base64 -d` restores the payload before `mimesh_init.sh` evaluates it.
+
+The encoder destinations impose 36/66-byte limits. The adjacent wire fields have
+32/64-byte reliable non-overlapping capacities; overlap layouts can use some
+additional encoder headroom.
 
 ## 7. Web-login verifier (V1)
 
@@ -123,6 +159,7 @@ the laundering channel the V2 sink abuses.
    **re-splits + `base64 -d` → `eval`** (§6) → **V2**, confirmed remote root RCE. The
    `type-7` handler has no `NETMODE`/state gate in the C code; the shell gate
    (`NETMODE=whc_cap`, set by normal CAP initialization or a completed `cap_init`)
-   can block the CAP/LAN path before the sink. See `chain2-root-rce.md` and
+   can block the CAP/LAN path before the sink. The factory RE/WAN path reaches
+   `re_init` without that gate and is confirmed on hardware. See `chain2-root-rce.md` and
    `CORRECTIONS.md` for reachability, scope, and the RE/WAN
    variant.

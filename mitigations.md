@@ -31,8 +31,12 @@ Be precise about the threat model, because it determines what helps:
 
 - The daemon listens on **TCP/UDP 19553 on the LAN bridge (`br-lan`)** when an
   initialized CAP instance is running (`INITTED=YES`).
-- It is **not exposed to the WAN.** A remote attacker on the internet cannot reach it
-  directly.
+- On a **factory-reset RD03v2**, the daemon also runs as an RE client on the
+  dynamically selected WAN interface. It broadcasts discovery and connects outbound
+  to a CAP on that WAN-side L2 segment. This path is confirmed to execute commands
+  as root without V1 or an admin session.
+- It is not directly reachable from the routed internet, but an attacker sharing the
+  upstream Ethernet segment can answer discovery and impersonate the CAP.
 - **The attacker must be able to reach the listener**, ordinarily from your
   wired LAN or main Wi-Fi. V1 needs no router-admin or mesh credentials after
   that network access is obtained.
@@ -46,8 +50,8 @@ Worth stating plainly, because these are the intuitive moves:
 - **Changing the admin password.** V1 harvests the stored login *verifier* over the
   mesh protocol regardless of what the password is. A strong password does not stop
   it, and after exploitation the password is known to the attacker anyway.
-- **Disabling remote/web management, UPnP, or WAN access.** The flaw is not
-  WAN-facing. Closing WAN features changes nothing here.
+- **Disabling remote/web management or UPnP.** Neither closes the LAN CAP listener
+  or the factory RE client's outbound mesh connection.
 - **Hiding the SSID or MAC filtering.** These do not protect a router from
   clients that already have access to its main LAN or Wi-Fi. A strong Wi-Fi key
   still matters because it limits who can join that network.
@@ -60,8 +64,9 @@ Worth stating plainly, because these are the intuitive moves:
 **Treat the LAN as the security boundary it now is.**
 
 1. **Know who is on your network.** A client that can reach the CAP listener can
-   obtain web-admin access. The demonstrated root path additionally requires a
-   gate-open mode; see [`CORRECTIONS.md`](CORRECTIONS.md). Remove unknown clients.
+   obtain web-admin access. The demonstrated CAP root path additionally requires a
+   gate-open mode; the factory RE/WAN root path has separate prerequisites described
+   above. See [`CORRECTIONS.md`](CORRECTIONS.md). Remove unknown clients.
 2. **Keep guest isolation enabled and verify it.** Stock RD03v2 guest Wi-Fi uses
    a separate bridge whose firewall rejects port 19553; a custom bridge or
    firewall rule could change that. Do not put untrusted clients on the main LAN.
@@ -73,6 +78,9 @@ Worth stating plainly, because these are the intuitive moves:
    from this router.
 5. **If the unit is only an access point or a switch**, remember the daemon still
    runs and still listens on `br-lan`. AP-only operation is not a mitigation.
+6. **Do factory setup only on a trusted upstream L2 segment.** Do not attach a
+   reset unit's Ethernet port to a shared apartment, campus, hotel, or provider
+   handoff where another subscriber can answer its mesh discovery broadcasts.
 
 **The durable fix is to replace the vendor firmware with OpenWrt, where a port
 exists.** This is model-specific, and it is the one thing that removes the mesh daemon

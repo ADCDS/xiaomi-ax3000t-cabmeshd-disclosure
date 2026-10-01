@@ -27,6 +27,7 @@ import argparse
 import base64
 import hashlib
 import hmac
+import os
 import socket
 import ssl
 import struct
@@ -63,7 +64,7 @@ def mkhdr(typ, blen, mac2=b"", mac5=b""):
     return bytes(h)
 
 
-def recv_loop(s, stop):
+def recv_loop(s, stop, dump_sync=None):
     """Print every frame the CAP sends, so we can follow the state machine."""
     s.settimeout(1.0)
     buf = b""
@@ -93,6 +94,13 @@ def recv_loop(s, stop):
             if typ == 6 and js != -1 and je > js:
                 log("[recv]   sync-config JSON:")
                 log("           " + body[js:je + 1].decode("utf-8", "replace"))
+            if typ == 6 and dump_sync:
+                flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
+                fd = os.open(dump_sync, flags, 0o600)
+                os.fchmod(fd, 0o600)
+                with os.fdopen(fd, "wb") as output:
+                    output.write(body)
+                log(f"[recv]   wrote raw type-6 body to {dump_sync}")
 
 
 def main():
@@ -106,6 +114,8 @@ def main():
     ap.add_argument("--mac2", default="MAC2_e8")
     ap.add_argument("--mac5", default="MAC5_fb")
     ap.add_argument("--hold", type=float, default=6.0)
+    ap.add_argument("--dump-sync", metavar="PATH",
+                    help="write the raw type-6 sync body to PATH")
     ap.add_argument("--no-trigger", action="store_true",
                     help="stop after receiving the sync config; do NOT send the "
                          "type-7 that triggers cap_init (non-destructive: no wifi "
@@ -140,7 +150,7 @@ def main():
     log(f"[+] TLS {s.version()} {s.cipher()[0]}")
 
     stop = threading.Event()
-    rx = threading.Thread(target=recv_loop, args=(s, stop), daemon=True)
+    rx = threading.Thread(target=recv_loop, args=(s, stop, args.dump_sync), daemon=True)
     rx.start()
 
     def send(typ, body, mac2=b"", mac5=b""):

@@ -17,8 +17,8 @@ mimesh_init's eval:
 Constraints (CAP/LAN path):
   * The plant is 19 bytes. After the 10-byte "a a a a a " pad, ~8 base64 chars fit
     -> ~6 raw bytes incl. backticks -> a ~4-character command. This is a genuine
-    but tightly-budgeted gate-open primitive. The RE/WAN candidate has a larger
-    measured budget but has not been stitched end-to-end on hardware.
+    but tightly-budgeted gate-open primitive. The separate RE/WAN path has a
+    larger 32/64-byte reliable budget and is confirmed end-to-end on hardware.
   * A completed cap_init can set NETMODE=whc_cap and close the sink. Normal web
     setup can set the same mode without a prior exploit. Treat the trigger as
     potentially one-shot and check the mode before using it.

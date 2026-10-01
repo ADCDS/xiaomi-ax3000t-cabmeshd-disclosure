@@ -22,7 +22,7 @@ publication:
 - **V1 remains a serious, independent admin takeover** wherever an initialized
   CAP listener is reachable. It is not gated by `NETMODE=whc_cap`; [issue #29](https://github.com/ADCDS/openwrt-xiaomi-ax3000t-rd03v2/issues/29)
   also shows a verifier leak and admin session in that mode.
-- **V2's demonstrated root path is conditional on a gate-open mode.** Its
+- **The demonstrated CAP root path is conditional on a gate-open mode.** Its
   physical proof is preserved in [`evidence/hardware-validation.md`](evidence/hardware-validation.md),
   but that test does not establish routine reachability after normal web setup.
 - **`get_netmode=4` is not an indicator of compromise.** Normal CAP initialization
@@ -30,9 +30,19 @@ publication:
 - **Stock RD03v2 guest Wi-Fi is not established as an exposure path.** Its
   separate `br-guest` firewall rules reject router input on port 19553. A live
   guest-network test remains to be done.
-- **The RE/WAN variant remains an emulation result.** The shipped WAN interface
-  name is empty, while the daemon's uninitialized RE startup branch requires a
-  nonempty name. Runtime port assignment on a fresh device remains unverified.
+- **Updated 2026-10-01: the RE/WAN variant is confirmed on hardware.** Runtime
+  port assignment populated `network.wan.ifname=eth1.4` on a factory-reset unit,
+  started `cab_meshd -C`, and satisfied the WAN gateway check with an ordinary
+  DHCP lease. A rogue CAP completed reversed authentication and returned
+  `uid=0(root) gid=0(root)` from a type-6 payload. No V1, web session, or
+  `init_router.py` step was used.
+
+  Two details from the earlier static analysis also changed. Empty preceding
+  type-6 fields are dropped by unquoted `$@` and must be populated to keep the
+  controlled values in `do_re_init` `$7/$8`. A successful `re_init` sets
+  `INITTED=YES` and stops the RE daemon, so the live path is effectively one-shot
+  per factory reset rather than repeatable. See
+  [`evidence/hardware-validation.md`](evidence/hardware-validation.md).
 
 The 28-model firmware sweep proves the shared key in those images; sampled
 unrelated models have similar listener code. End-to-end admin login and root
