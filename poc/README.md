@@ -80,10 +80,10 @@ repeating the test.
 
 The combined CAP/UCI and direct V2 CAP/LAN hardware tests used the gate-open mode
 left by `init_router.py`. The earlier qemu-user proof reproduced the equivalent
-`NETMODE`-unset state independently. On an
-ordinarily web-configured unit, `NETMODE=whc_cap` can block the demonstrated
-CAP-side V2 routes even though V1 admin takeover still works. A full reset erases
-settings; repeating the normal web wizard can set the same mode again. See
+`NETMODE`-unset state independently. On physical hardware, the normal web wizard
+instead set `NETMODE=whc_cap` and blocked both CAP-side V2 root routes while V1
+admin takeover continued to work. A full reset erases settings; repeating the
+normal web wizard restores the gated mode. See
 [`../v2-root-rce.md`](../v2-root-rce.md).
 
 ```bash
@@ -100,7 +100,7 @@ python3 handshake.py --host 192.168.31.1 --no-trigger
 
 Minimal initialization keeps the shipped admin verifier and opens the mesh
 listener. Use an isolated network and complete the intended test or install
-promptly; ordinary web setup is a different path and can close the V2 gate.
+promptly; the tested normal web setup closed the CAP-side V2 gate.
 
 The direct RE/WAN route above is independent and does not use this preparation.
 
@@ -144,9 +144,9 @@ then retry. The reverse shell loop retries every 10 seconds, so if the `nc` list
 disconnects, starting a new one picks up a fresh shell.
 
 This combined V1 → V2 route was confirmed over Wi-Fi on physical RD03v2 hardware after
-minimal initialization left `NETMODE` unset. Reachability after ordinary
-Xiaomi web setup has not been demonstrated. See `../v2-root-rce.md` for the
-technical breakdown.
+minimal initialization left `NETMODE` unset. A separate normal-wizard hardware
+test produced `NETMODE=whc_cap`; `ota_rce.py` observed numeric `4` and stopped
+before planting anything. See `../v2-root-rce.md` for the technical breakdown.
 
 ## Direct V2 CAP/LAN short-command primitive — hardware confirmed
 
@@ -176,8 +176,8 @@ through the admin Wi-Fi API in the tested gate-open state.
   planting anything.** `NETMODE=whc_cap` blocks this sink but does not prove a
   previous exploit; `lanapmode` with `CAP_MODE=ap` also skips it. On an owned
   test unit, a full reset followed by the minimal
-  `init_router.py` setup can reproduce the tested gate-open state; a normal web
-  setup can close it again.
+  `init_router.py` setup can reproduce the tested gate-open state; the normal web
+  wizard was hardware-confirmed to close it again.
 - `rce_poc.py` sends a `cap_init` trigger and can execute its short command on a
   gate-open unit. The hardware `id` test changed `NETMODE` and wireless mesh state;
   the unit was factory-reset afterward.

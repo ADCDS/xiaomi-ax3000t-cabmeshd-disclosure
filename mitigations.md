@@ -107,8 +107,9 @@ entirely rather than merely containing it.
   system comes up with **Wi-Fi disabled**, so have an Ethernet cable for the final step
   unless you configure the radios from the RAM system before running `sysupgrade`.
   On stock 2.0.28 configured through the normal Xiaomi wizard, `NETMODE=whc_cap`
-  can block this installer’s root step; the documented route then requires a
-  full factory reset (erasing settings) followed by minimal initialization.
+  was hardware-confirmed to block this installer’s root step; the documented route
+  then requires a full factory reset (erasing settings) followed by minimal
+  initialization.
 
 - **Every other affected model — check before you assume.** The installer above is
   **`RD03v2`-only** and will not work on any other model code. OpenWrt support across
@@ -135,9 +136,10 @@ Assume you cannot tell from the device. A successful exploit gives the attacker
 evidence of absence.
 
 **`NETMODE=whc_cap` is not a compromise indicator.** The router's
-`api/xqnetwork/get_netmode` API reports it as `4`, but normal setup can produce
-that value without an exploit. It only tells you that the demonstrated CAP-side
-V2 routes are gated in the current state. The shell also gates the sink when
+`api/xqnetwork/get_netmode` API reports it as `4`; the tested normal wizard
+produced that value without an exploit. It tells you that the demonstrated
+CAP-side V2 routes are gated in the current state, but it does not close V1. The
+shell also gates the sink when
 `NETMODE=lanapmode` and `CAP_MODE=ap`.
 
 **Other indicators worth checking:**

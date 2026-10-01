@@ -123,16 +123,17 @@ vulnerability has two V2-only exploit routes and one combined V1 → V2 route:
 
 The combined CAP/UCI hardware test used `poc/init_router.py` as laboratory
 preparation. This was not an attacker capability demonstrated against a normally
-configured router. Xiaomi's normal wizard can set `NETMODE=whc_cap`, which causes
-`do_cap_init` to skip the sink; no non-reset transition from that state was shown.
-The direct RE/WAN route instead applies only to the factory/WAN state.
+configured router. In a separate hardware test, Xiaomi's normal wizard produced
+`inited=1`, `NETMODE=whc_cap`, and `cab_meshd -S -i br-lan`. V1 remained
+exploitable, both CAP-side V2 root routes were blocked, and the factory RE/WAN
+client was no longer running.
 
 - **CWE-78** (OS command injection).
 - **CVSS 3.1 for both demonstrated adjacent states:**
   `AV:A/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H` → **8.8 (High)**. This is not a claim
-  that either CAP-side route is reachable after ordinary web setup. Direct
-  RE/WAN has a different prerequisite: WAN-side L2 adjacency to a factory-reset
-  router.
+  that either CAP-side route works after ordinary web setup: both were tested and
+  blocked by `whc_cap`. Direct RE/WAN has a different prerequisite: WAN-side L2
+  adjacency to a factory-reset router.
 
 ## Attack prerequisites
 
@@ -157,7 +158,8 @@ mesh credentials, V1 session, or user interaction. A completed `re_init` sets
 Main-LAN or main-Wi-Fi access to the deliberately prepared CAP state used in the
 hardware test: `INITTED=YES`, API `get_netmode=0`, and UCI `NETMODE` unset. V1
 requires no pre-existing router credentials; it obtains the admin session used for
-the UCI plant. Reachability after ordinary Xiaomi setup was not demonstrated.
+the UCI plant. The normal-wizard hardware test instead produced `get_netmode=4`
+and blocked this root route before the plant.
 
 ### Direct V2 CAP/LAN
 
@@ -194,7 +196,9 @@ validated through the real daemon and shell scripts on physical RD03v2 hardware:
 **direct RE/WAN**, **direct CAP/LAN**, and **combined V1 → V2 CAP/UCI**. The direct
 CAP/LAN proof used an observer admin session only to query `get_netmode` and
 retrieve diagnostic logs; the payload and trigger used no V1 plant or admin API
-call. Route-specific output and setup boundaries are in
+call. A separate normal-wizard hardware test left V1 reachable while blocking or
+removing every demonstrated V2 root route. Route-specific output and setup
+boundaries are in
 [`evidence/hardware-validation.md`](evidence/hardware-validation.md).
 
 Two further lines of evidence, both reproducible by the vendor without hardware:

@@ -17,8 +17,9 @@ interface, broadcast UDP/19553 discovery, and connect outbound to a CAP; this
 helper does not prepare or use that RE/WAN path. It flips the initialization bit
 through the device's own web API, using only what is recoverable from the firmware
 image.
-It is **not** equivalent to the normal Xiaomi web wizard: that wizard can call
-`mesh_connect.sh init_cap 2` and set `NETMODE=whc_cap`, closing the CAP root sink.
+It is **not** equivalent to the normal Xiaomi web wizard: the tested wizard flow
+calls the `mesh_connect.sh init_cap 2` path and sets `NETMODE=whc_cap`, closing the
+CAP root sink.
 This helper leaves `NETMODE` unset while opening the CAP listener.
 
 What it deliberately does NOT do

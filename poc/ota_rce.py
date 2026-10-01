@@ -273,7 +273,7 @@ def require_tested_gate_open_mode(raw):
     if mode != 0:
         raise ValueError(
             f"NETMODE={mode} is not the gate-open mode verified on hardware; "
-            "normal web setup can set whc_cap (4)"
+            "the tested normal web setup produced whc_cap (4)"
         )
     return mode
 
@@ -529,8 +529,9 @@ def main():
     log(f"[A] admin session minted: stok={stok}")
 
     # Confirm the gate-open mode used in the physical test before writing any
-    # Wi-Fi setting. Normal stock web setup can set whc_cap, where do_cap_init
-    # skips the eval; a prior completed cap_init can produce the same value.
+    # Wi-Fi setting. The tested normal stock web setup produced whc_cap, where
+    # do_cap_init skips the eval; a prior completed cap_init can produce the same
+    # value.
     # Unknown/error replies must never be treated as "armed".
     try:
         netmode = require_tested_gate_open_mode(

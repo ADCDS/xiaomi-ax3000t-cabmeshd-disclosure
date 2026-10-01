@@ -7,8 +7,10 @@ confirmed on hardware through three exploit routes: direct V2 RE/WAN against a
 factory-reset router, combined V1 → V2 CAP/UCI against a deliberately prepared
 gate-open CAP, and the direct V2 CAP/LAN short-command primitive in that same CAP
 laboratory state.
-Normal Xiaomi setup can set `NETMODE=whc_cap`, which blocks the demonstrated CAP
-sink; reachability from that ordinary configured state has not been shown.
+On the tested physical unit, normal Xiaomi setup set `NETMODE=whc_cap`: V1
+remained exploitable, both CAP-side V2 root routes were blocked, and Direct V2
+RE/WAN was unavailable after the router became an initialized CAP. See
+[`evidence/hardware-validation.md`](evidence/hardware-validation.md#normal-web-wizard-state-v1-survives-v2-root-routes-unavailable).
 
 > ### Published 2026-09-28
 >
@@ -141,9 +143,9 @@ in `bh_pswd`; the encoders permit 36/66 bytes.
 The hardware demonstration first factory-reset the router and ran
 `poc/init_router.py --host 192.168.31.1 --reboot`, producing an initialized CAP
 with `NETMODE` unset. This is explicit laboratory preparation, not an attacker
-capability demonstrated against a normally configured router. Xiaomi's normal
-wizard can set `NETMODE=whc_cap`, which skips the CAP sink; no non-reset bypass
-from that state was demonstrated.
+capability demonstrated against a normally configured router. In a separate
+hardware test, Xiaomi's normal wizard set `NETMODE=whc_cap` and blocked both
+CAP-side V2 root routes; no non-reset bypass from that state was demonstrated.
 
 After preparation, `ota_rce.py` uses two separate mesh connections:
 

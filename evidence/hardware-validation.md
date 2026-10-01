@@ -61,8 +61,9 @@ RD03v2 unit. The full sequence runs purely over Wi-Fi with no WAN cable.
 1. Factory-reset the device; run `poc/init_router.py --host 192.168.31.1 --reboot` to
    bring it to `INITTED=YES` (opens TCP 19553). This uses the minimal
    `/api/xqsystem/router_init` path, **not** the normal Xiaomi web wizard.
-   `NETMODE` remained unset before the V2 trigger. Normal web setup can call
-   `init_cap 2` and set `whc_cap`, which skips the demonstrated CAP sink.
+   `NETMODE` remained unset before the V2 trigger. The separate normal-wizard
+   hardware test below called the `init_cap 2` path, set `whc_cap`, and skipped
+   the demonstrated CAP sink.
 2. Start `poc/ota_rce.py --host 192.168.31.1 --attacker 192.168.31.231` (the PoC
    automates all remaining steps, but manually:)
    - V1 (`extract_admin.py`) leaks `web_passwd256`, mints admin `stok`.
@@ -134,7 +135,8 @@ tcp        0      0 :::443                  :::*                    LISTEN      
 - **The combined route is automated**: V1 admin takeover → UCI plant → V2 root
   execution → interactive shell, all from `poc/ota_rce.py`.
 
-This does not establish V2 reachability after ordinary Xiaomi web setup.
+This combined run used the deliberate gate-open laboratory state. The separate
+normal-wizard test below establishes the ordinary configured-state boundary.
 
 ---
 
@@ -277,6 +279,56 @@ cannot be evidence of this sink. A brief link interruption can instead come from
 After evidence capture, the router was factory-reset. The unauthenticated status
 endpoint again reported RD03v2 stock `2.0.28`, `inited=0`; TCP/19553 and SSH were
 closed. The host's temporary `192.168.31.231/24` test address was removed.
+
+---
+
+## Normal web-wizard state: V1 survives; V2 root routes unavailable
+
+Test date: 2026-10-01. Starting again from factory state, the stock web wizard's
+normal-router flow configured both bands as WPA2 under the supplied bench SSID and
+set the admin password. The resulting state was:
+
+```text
+hardware=RD03v2  romversion=2.0.28  inited=1
+get_netmode=4    NETMODE=whc_cap
+/usr/sbin/cab_meshd -S -i br-lan
+tcp/19553 open   ssh closed
+```
+
+The configured password and its verifier are omitted from this evidence.
+
+### V1 after normal setup
+
+`poc/extract_admin.py` completed against the initialized CAP, leaked the newly
+configured `web_passwd256`, and minted a valid admin session. The `whc_cap` gate
+therefore does not mitigate V1.
+
+### Combined V1 → V2 CAP/UCI after normal setup
+
+`poc/ota_rce.py` completed its V1 phase, queried `get_netmode`, observed numeric
+`4`, and stopped before planting any UCI payload or sending the V2 trigger.
+
+### Direct V2 CAP/LAN after normal setup
+
+Before the trigger, the diagnostic archive contained no `uid=0(root)` result.
+`poc/rce_poc.py --cmd id` then delivered the same type-4 plant and tested
+`4→5→7` exchange used by the successful gate-open hardware run. A second archive
+still contained no `uid=0(root)` result. `get_netmode` remained `4`, and both
+configured WPA2 SSIDs remained unchanged. The protocol frames were accepted, but
+`do_cap_init` skipped the root `eval`.
+
+### Direct V2 RE/WAN after normal setup
+
+The process snapshot contained `/usr/sbin/cab_meshd -S -i br-lan` and no
+`cab_meshd -C` client. With `inited=1`, the factory RE/WAN route was unavailable.
+
+### Result and retained state
+
+Normal web setup left V1 exploitable but disabled every demonstrated V2 root
+route: both CAP routes were blocked by `NETMODE=whc_cap`, and Direct RE/WAN was
+removed by the transition to initialized CAP state. The router was intentionally
+left normally configured after this test; temporary sessions and diagnostic
+archives were deleted.
 
 ## V3 — root credential
 

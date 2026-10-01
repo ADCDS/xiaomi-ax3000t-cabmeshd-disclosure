@@ -227,10 +227,11 @@ The hardware result used this exact preparation:
 `init_router.py` is **laboratory preparation**, not an exploit primitive and not an
 attacker capability demonstrated against a normally configured router. A factory
 unit has no inbound CAP listener, so this path cannot begin until the preparation
-and reboot are complete. Xiaomi's normal web wizard can instead call
-`mesh_connect.sh init_cap 2` and commit `NETMODE=whc_cap`; that state skips the
-demonstrated CAP root sink. No non-reset transition from that normal configured
-state to the gate-open state has been demonstrated.
+and reboot are complete. In the separate normal-setup hardware test, Xiaomi's web
+wizard called the `mesh_connect.sh init_cap 2` path and committed
+`NETMODE=whc_cap`; that state skipped the demonstrated CAP root sink. No non-reset
+transition from that normal configured state to the gate-open state has been
+demonstrated.
 
 ### V1 obtains admin; V2 triggers the sink
 
@@ -301,7 +302,8 @@ Detailed output is in `evidence/hardware-validation.md`.
 On physical RD03v2 hardware, normal web setup left V1 reachable but disabled every
 demonstrated V2 root route: both CAP routes were blocked by `NETMODE=whc_cap`, and
 Direct RE/WAN was unavailable because the initialized router ran `cab_meshd -S`
-rather than the factory `cab_meshd -C` client.
+rather than the factory `cab_meshd -C` client. See
+[`evidence/hardware-validation.md`](evidence/hardware-validation.md#normal-web-wizard-state-v1-survives-v2-root-routes-unavailable).
 
 ## Fix
 
